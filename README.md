@@ -27,7 +27,7 @@ Generate bindings where supported, otherwise validate adapters against the same 
 
 - [Protocol](https://github.com/opensimgear/protocol): shared definitions and compatibility rules.
 - [Firmware common](https://github.com/opensimgear/firmware-common): reusable C implementation.
-- [Firmware template](https://github.com/opensimgear/firmware-template): starting layout for new devices.
+- [Device template](https://github.com/opensimgear/device-template): new-device scaffold with planned hello-world firmware and starter KiCad board.
 - [Cockpit](https://github.com/opensimgear/cockpit): desktop configuration application.
 - [Website](https://github.com/opensimgear/opensimgear.github.io): system architecture and user documentation.
 
