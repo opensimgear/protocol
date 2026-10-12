@@ -15,7 +15,7 @@ The gateway supports up to ten controller slots and profiles with 128 buttons, f
 
 Cockpit consumes actual C formatter fixtures. Software tests establish portable source interoperability; assembled STM32 USB/CAN, timing, power and flash brownout behavior remain unverified.
 
-The [native integration harness](tests/README.md) checks ten concurrent device clients through discovery, messaging, frame loss/delay/reordering, reboots, CAN node-ID collisions and direct USB ownership changes. Seeded randomized stress combines these faults, checks delivery invariants and requires all ten devices to recover after faults stop. Each seed is replayed to verify determinism. GitHub Actions runs it with address and undefined-behavior sanitizers.
+The [native integration harness](tests/README.md) checks ten concurrent device clients through discovery, messaging, frame loss/delay/reordering, reboots, CAN node-ID collisions and direct USB ownership changes. Seeded randomized stress combines these faults with duplicate and malformed frames and CAN transmit backpressure, checks delivery and queue invariants, and requires all ten devices to recover after faults stop. Each seed is replayed to verify determinism. GitHub Actions runs it with address and undefined-behavior sanitizers.
 
 Cyphal firmware rejects the replaced private CAN v1/v2 wire peers. Existing registry storage remains compatible, including its older v1 migration. The Pico W simulator uses its own protocol-1 adapter. Update matching STM32 device/gateway firmware together. See [compatibility](compatibility/README.md).
 

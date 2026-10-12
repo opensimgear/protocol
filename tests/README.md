@@ -77,9 +77,28 @@ The runner also executes deterministic randomized stress for seeds `0x13579bdf`,
 frame/event trace digest. Separate xorshift32 streams drive the event schedule
 and wire faults. The harness normalizes libcanard's initial address-mixed PRNG
 state after construction/reset so ASLR cannot alter replayed collision choices;
-the firmware and vendored transport are unchanged. Each run combines 60 seconds of simulated activity with roughly
+the firmware and vendored transport are unchanged. Each run combines 60 seconds
+of simulated activity with roughly
 12% frame loss, 28% delayed frames (10–400 ms), reversed delivery order, device
 and gateway reboots, occupied CAN node IDs and temporary direct USB ownership.
+Of frames surviving wire loss, roughly 15% are duplicated with an independent
+0–80 ms extra delay and 10% are corrupted. Corruption rotates through an invalid
+extended-ID flag, illegal CAN FD length, invalid single-frame toggle, and invalid
+application UID/route fields. Rejected traffic must never become gateway input
+or a successful client ACK. All four corruption modes and duplicate/corrupted
+traffic from every device and the gateway are required in each seed.
+
+CAN driver backpressure returns `false` before wire admission, retaining frames
+in real libcanard queues. Each endpoint gets two transmit credits per 10 ms tick
+and interleaved blocked periods of 50–250 ms. A 150 ms blocked startup burst
+fills all eleven 16-frame transport queues, verifies failed admission without
+advancing client input sequences, and forces deadline expiration. Coverage checks
+require saturation, admission failures, driver refusals and expiration on every
+endpoint, plus successful immutable retries. Retry bytes and deadlines are
+checked; expired frames are consumed without wire delivery, matching the board
+driver's queue-discard behavior. Input provenance follows queued frame bytes and
+ACK provenance follows retained successful USB snapshots even when emission is
+delayed by pressure.
 A shuffled initial sweep guarantees a reboot, collision injection and USB
 takeover/release for every device; coverage checks additionally require actual
 loss/delay and acknowledged messaging for every device, gateway reboots and
@@ -93,14 +112,17 @@ and ACK provenance from an immutable successful USB completion. Invalidated USB
 snapshots must not produce ACKs. After faults stop, pending traffic remains and
 all ownership is released. Within a further 35 seconds of simulated time every
 device must recover discovery, current source/session binding, exact input
-reports and successful completion ACKs. The test uses simulated time, without
+reports and successful completion ACKs. All transmit queues must drain, and
+transport destruction must return every fixed-pool block. The test uses simulated time, without
 wall-clock sleeps, and is automatically included in the existing CI runner.
 
 Failure diagnostics include seed, simulated time and event index. To replay
 one seed, append `--stress-seed 0x13579bdf` to the runner command above; it still
 runs the focused suites and repeats the selected stress seed twice. This stress
 test checks portable behavior and does not emulate CAN arbitration, STM32 HAL
-or physical USB. Its fixed corpus is bounded coverage rather than exhaustive
+or physical USB. Corruption targets detectable malformed traffic: arbitrary
+valid single-frame CAN FD payload changes have no Cyphal transfer CRC, while
+physical CAN CRC rejection is outside the harness. Its fixed corpus is bounded coverage rather than exhaustive
 fault exploration.
 
 GitHub Actions runs both integration suites with AddressSanitizer and
