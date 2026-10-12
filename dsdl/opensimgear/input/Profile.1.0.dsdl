@@ -1,0 +1,9 @@
+# HID input shape. Unused axis entries must be zero. Usage values are USB HID Generic Desktop usages.
+uint8 button_count
+uint8 axis_count
+uint8 hat_count
+uint16 revision
+uint8[8] axis_usage
+uint16[8] axis_neutral
+@sealed
+

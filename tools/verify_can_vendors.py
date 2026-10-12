@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check the reviewed private CAN v2 codec and optionally both firmware copies."""
+"""Check canonical Cyphal snapshots and gateway CDC conformance fixtures."""
 import argparse
 import hashlib
 import json
@@ -12,40 +12,43 @@ def main():
     parser.add_argument('--workspace', type=Path, help='Parent containing device-gateway and device-template')
     parser.add_argument('--gateway-test', type=Path, help='Fresh native osg_gateway_test executable')
     args = parser.parse_args()
-    reference = Path(__file__).resolve().parents[1] / 'reference/can-fd-v2'
+    protocol = Path(__file__).resolve().parents[1]
+    reference = protocol / 'cyphal'
     manifest = json.loads((reference / 'SHA256.json').read_text())
     checked = 0
     for name, expected in manifest.items():
         paths = [reference / name]
         if args.workspace:
-            if name.endswith('.h'):
-                paths += [args.workspace / 'device-gateway/firmware/include' / name,
-                          args.workspace / 'device-template/firmware/shared-gateway/include' / name]
-            else:
-                paths += [args.workspace / 'device-gateway/firmware/src' / name,
-                          args.workspace / 'device-template/firmware/shared-gateway/src' / name]
+            paths += [args.workspace / repo / 'firmware/shared-cyphal' / name
+                      for repo in ('device-gateway', 'device-template')]
         for path in paths:
             digest = hashlib.sha256(path.read_bytes()).hexdigest()
             if digest != expected:
-                raise SystemExit(f'CAN v2 codec differs from reviewed snapshot: {path}')
+                raise SystemExit(f'Cyphal source differs from canonical snapshot: {path}')
             checked += 1
-    print(f'{checked} codec files match the reviewed CAN v2 snapshot')
-    fixtures = reference.parents[1] / 'test-vectors'
+    for root in ([reference] + ([args.workspace / repo / 'firmware/shared-cyphal'
+                               for repo in ('device-gateway', 'device-template')]
+                              if args.workspace else [])):
+        actual = {str(path.relative_to(root)) for path in root.rglob('*')
+                  if path.is_file() and path.name != 'SHA256.json'}
+        if actual != set(manifest):
+            raise SystemExit(f'Unexpected or missing Cyphal snapshot files: {root}')
+    print(f'{checked} Cyphal files match the canonical snapshot')
+    fixtures = protocol / 'test-vectors'
     if args.workspace:
         copies = [
-            ('can-fd-v2.json', args.workspace / 'device-gateway/firmware/tests/can-fd-v2-vectors.json'),
             ('stm32-gateway-v2.json', args.workspace / 'cockpit/src-tauri/tests/fixtures/stm32-gateway-v2.json'),
         ]
         for name, path in copies:
             if json.loads(path.read_text()) != json.loads((fixtures / name).read_text()):
                 raise SystemExit(f'Conformance fixture differs from canonical snapshot: {path}')
-        print('Both firmware/Cockpit fixture copies match canonical snapshots')
+        print('Cockpit CDC fixture matches canonical snapshot')
     if args.gateway_test:
-        for name, option in [('can-fd-v2.json', '--vectors'), ('stm32-gateway-v2.json', '--cockpit-vectors')]:
+        for name, option in [('stm32-gateway-v2.json', '--cockpit-vectors')]:
             fresh = json.loads(subprocess.check_output([str(args.gateway_test), option]))
             if fresh != json.loads((fixtures / name).read_text()):
                 raise SystemExit(f'Fresh gateway C output differs from canonical fixture: {name}')
-        print('Both canonical fixtures match fresh gateway C output')
+        print('Canonical CDC fixture matches fresh gateway C output')
 
 
 if __name__ == '__main__':

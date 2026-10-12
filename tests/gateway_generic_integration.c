@@ -1,6 +1,6 @@
 /* Portable integration of the real generic acquisition/client/delivery code
- * with the real gateway core, registry, codec and USB-completion ACK boundary.
- * No board HAL, fake CAN codec or physical USB driver is linked. */
+ * with the real gateway core, registry, Cyphal stack and USB-completion boundary.
+ * Both endpoints exchange real libcanard frames with generated DSDL payloads. */
 #include "opensimgear/gateway.h"
 #include "can_client.h"
 #include "can_delivery.h"
@@ -12,6 +12,7 @@ enum { IDLE=0, WAIT_PRESS=1, HOLD=2, WAIT_RELEASE=3, GAP=4 };
 typedef struct {
     osg_gateway_t gateway;
     osg_can_client_t client;
+    osg_cyphal_t gateway_transport;
     osg_can_delivery_t delivery;
     osg_profile_state_t acquisition;
     osg_profile_sample_t sample;
@@ -21,13 +22,23 @@ typedef struct {
     osg_profile_hat_t hats[4];
     osg_profile_encoder_t encoder;
     uint8_t report[OSG_REPORT_CAPACITY];
-    osg_gateway_frame_t queued[16],last_input;
+    osg_gateway_frame_t queued[128],last_input,last_ack;
+    osg_gateway_message_t last_input_message;
+    bool from_gateway[128];
     unsigned queue_count,announces,assignments,inputs,completion_acks;
 } fixture_t;
 
 static bool enqueue(void *context,const osg_gateway_frame_t *frame) {
     fixture_t *f=context;
     assert(f->queue_count<sizeof f->queued/sizeof f->queued[0]);
+    f->from_gateway[f->queue_count]=false;
+    f->queued[f->queue_count++]=*frame;
+    return true;
+}
+static bool gateway_enqueue(void *context,const osg_gateway_frame_t *frame) {
+    fixture_t *f=context;
+    assert(f->queue_count<sizeof f->queued/sizeof f->queued[0]);
+    f->from_gateway[f->queue_count]=true;
     f->queued[f->queue_count++]=*frame;
     return true;
 }
@@ -37,22 +48,35 @@ static void rearm(fixture_t *f,uint32_t now) {
     osg_can_delivery_rearm(&f->delivery);
 }
 static void pump(fixture_t *f,uint32_t now) {
+    osg_cyphal_tick(&f->client.cyphal,now);
+    osg_cyphal_tick(&f->gateway_transport,now);
     for(unsigned i=0;i<f->queue_count;i++) {
+        if(f->from_gateway[i]) {
+            uint32_t generation=f->client.generation;
+            uint32_t acknowledged=f->client.ack_sequence;
+            bool completed=osg_can_client_receive(&f->client,&f->queued[i],now);
+            if(completed) {
+                assert(f->client.ack_sequence>acknowledged);
+                f->last_ack=f->queued[i];
+            }
+            if(generation!=f->client.generation) rearm(f,now);
+            continue;
+        }
         osg_gateway_message_t decoded;
-        assert(osg_gateway_frame_decode(&f->queued[i],&decoded));
-        osg_gateway_frame_t reply;
-        osg_gateway_receive_result_t result=osg_gateway_receive(&f->gateway,&f->queued[i],now,&reply);
+        if(!osg_cyphal_receive(&f->gateway_transport,&f->queued[i],now,&decoded)) continue;
+        osg_gateway_message_t reply;
+        osg_gateway_receive_result_t result=osg_gateway_receive(&f->gateway,&decoded,now,&reply);
         if(decoded.type==OSG_GW_ANNOUNCE) {
             f->announces++;
             assert(result==OSG_GW_RX_ASSIGNMENT);
-            uint32_t generation=f->client.generation;
-            assert(!osg_can_client_receive(&f->client,&reply,now));
+            assert(osg_cyphal_send(&f->gateway_transport,&reply,now));
+            osg_cyphal_tick(&f->gateway_transport,now);
             f->assignments++;
-            if(generation!=f->client.generation) rearm(f,now);
         } else {
             assert(decoded.type==OSG_GW_INPUT);
             assert(result==OSG_GW_RX_ACCEPTED);
             f->last_input=f->queued[i];
+            f->last_input_message=decoded;
             f->inputs++;
         }
     }
@@ -108,6 +132,14 @@ static void init(fixture_t *f) {
     assert(osg_gateway_identity_parse("00112233445566778899aabbccddeeff",&id));
     assert(osg_can_client_init(&f->client,&id,&profile,42,enqueue,f));
     assert(osg_gateway_init(&f->gateway,65536,NULL));
+    osg_gateway_identity_t gateway_id;
+    assert(osg_gateway_identity_parse("8899aabbccddeeff0011223344556677",&gateway_id));
+    assert(osg_cyphal_init(&f->gateway_transport,&gateway_id,65536,
+        "org.opensimgear.gateway",gateway_enqueue,f));
+    /* Deterministic fixture addresses; automatic collision repair is exercised
+     * separately by the canonical transport tests and device client tests. */
+    assert(canard_set_node_id(&f->client.cyphal.canard,42));
+    assert(canard_set_node_id(&f->gateway_transport.canard,101));
     osg_can_delivery_rearm(&f->delivery);
 }
 static osg_gateway_delivery_t submit(fixture_t *f,uint8_t packet[OSG_GW_MAX_REPORT_SIZE+1]) {
@@ -118,15 +150,17 @@ static osg_gateway_delivery_t submit(fixture_t *f,uint8_t packet[OSG_GW_MAX_REPO
 }
 static osg_gateway_frame_t complete(fixture_t *f,const osg_gateway_delivery_t *delivery,
                                    const uint8_t packet[OSG_GW_MAX_REPORT_SIZE+1],uint32_t now) {
-    osg_gateway_frame_t ack;
-    assert(osg_gateway_delivery_complete(&f->gateway,delivery,packet,OSG_GW_MAX_REPORT_SIZE+1,&ack));
     osg_gateway_message_t message;
-    assert(osg_gateway_frame_decode(&ack,&message) && message.type==OSG_GW_INPUT_ACK);
+    assert(osg_gateway_delivery_complete(&f->gateway,delivery,packet,OSG_GW_MAX_REPORT_SIZE+1,&message));
+    assert(message.type==OSG_GW_INPUT_ACK);
     assert(message.sequence==delivery->sequence && !memcmp(message.report,packet+1,OSG_GW_MAX_REPORT_SIZE));
-    assert(osg_can_client_receive(&f->client,&ack,now));
+    assert(osg_cyphal_send(&f->gateway_transport,&message,now));
+    osg_cyphal_tick(&f->gateway_transport,now);
+    pump(f,now);
+    assert(f->client.ack_sequence==delivery->sequence);
     osg_can_delivery_completed(&f->delivery,&f->acquisition,f->client.ack_sequence,f->client.acknowledged,now);
     f->completion_acks++;
-    return ack;
+    return f->last_ack;
 }
 static void neutral_gateway(const fixture_t *f) {
     uint8_t actual[OSG_GW_MAX_REPORT_SIZE],expected[OSG_GW_MAX_REPORT_SIZE];
@@ -174,7 +208,7 @@ static void encoder_completion_test(fixture_t *f) {
     uint8_t press_packet[OSG_GW_MAX_REPORT_SIZE+1];
     osg_gateway_delivery_t press=submit(f,press_packet);
     assert(press.valid && !memcmp(press_packet+1,f->report,OSG_GW_MAX_REPORT_SIZE));
-    osg_gateway_frame_t ignored;
+    osg_gateway_message_t ignored;
     uint8_t bad[sizeof press_packet];memcpy(bad,press_packet,sizeof bad);bad[0]=2;
     assert(!osg_gateway_delivery_complete(&f->gateway,&press,bad,sizeof bad,&ignored));
     assert(!osg_gateway_delivery_complete(&f->gateway,&press,press_packet,sizeof press_packet-1,&ignored));
@@ -206,13 +240,19 @@ static void ownership_and_stale_lease_test(fixture_t *f) {
     transmit(f,226);
     uint8_t pending_packet[OSG_GW_MAX_REPORT_SIZE+1];
     osg_gateway_delivery_t pending=submit(f,pending_packet);
-    osg_gateway_frame_t old_input=f->last_input,old_ack;
-    assert(osg_gateway_delivery_complete(&f->gateway,&pending,pending_packet,sizeof pending_packet,&old_ack));
+    osg_gateway_message_t old_input=f->last_input_message,old_ack_message;
+    assert(osg_gateway_delivery_complete(&f->gateway,&pending,pending_packet,sizeof pending_packet,&old_ack_message));
+    /* Delay this exact eligible ACK on the bus until after ownership changes. */
+    assert(osg_cyphal_send(&f->gateway_transport,&old_ack_message,226));
+    osg_cyphal_tick(&f->gateway_transport,226);
+    assert(f->queue_count>0 && f->from_gateway[f->queue_count-1]);
+    osg_gateway_frame_t old_ack=f->queued[f->queue_count-1];
+    f->queue_count=0;
     assert(osg_can_client_usb(&f->client,true));rearm(f,227);
     osg_can_client_tick(&f->client,228,f->report);pump(f,228);
     assert(!osg_can_client_active(&f->client) && f->gateway.modules[0].direct_usb);
     neutral_gateway(f);
-    osg_gateway_frame_t ignored;
+    osg_gateway_message_t ignored;
     assert(!osg_gateway_delivery_complete(&f->gateway,&pending,pending_packet,sizeof pending_packet,&ignored));
     assert(!osg_can_client_receive(&f->client,&old_ack,228));
     assert(osg_can_client_usb(&f->client,false));rearm(f,229);
@@ -248,7 +288,7 @@ static void offline_registry_test(fixture_t *f) {
     assert(!osg_gateway_needs_apply(&f->gateway));neutral_gateway(f);
     uint8_t packet[OSG_GW_MAX_REPORT_SIZE+1];osg_gateway_delivery_t neutral=submit(f,packet);
     assert(!neutral.valid);
-    osg_gateway_frame_t ignored;
+    osg_gateway_message_t ignored;
     assert(!osg_gateway_delivery_complete(&f->gateway,&neutral,packet,sizeof packet,&ignored));
     uint8_t record[OSG_GW_REGISTRY_RECORD_SIZE];osg_gateway_registry_t restored;
     size_t length=osg_gateway_registry_encode(&f->gateway.active,record,sizeof record);
@@ -257,10 +297,14 @@ static void offline_registry_test(fixture_t *f) {
     assert(rebooted.active.slots[0].occupied && !rebooted.modules[0].online);
     assert(osg_gateway_identity_equal(&rebooted.active.slots[0].identity,&f->client.identity));
 }
+void multi_device_integration_test(void);
 int main(void) {
     fixture_t f;init(&f);register_maximum_profile(&f);
     encoder_completion_test(&f);ownership_and_stale_lease_test(&f);offline_registry_test(&f);
     assert(f.announces>=4 && f.assignments==f.announces && f.inputs>=6 && f.completion_acks==4);
     puts("PASS: real generic acquisition -> CAN discovery/assignment -> persistent registry -> gateway HID completion ACK -> encoder delivery; ownership, lease and offline guards");
+    osg_cyphal_destroy(&f.client.cyphal);
+    osg_cyphal_destroy(&f.gateway_transport);
+    multi_device_integration_test();
     return 0;
 }

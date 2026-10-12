@@ -1,7 +1,8 @@
 # Local cross-firmware integration
 
-The optional runner builds the actual gateway core/registry/codec and generic
-CAN client/delivery with a local pinned firmware-common input implementation.
+The optional runner builds the actual gateway core/registry, generated Cyphal
+payloads, libcanard transport and generic CAN client/delivery with a local pinned
+firmware-common input implementation.
 It requires adjacent `device-gateway/` and `device-template/` checkouts, the pinned common source and a host C compiler. It never
 fetches a branch, flashes a board or changes an existing firmware checkout.
 
@@ -15,15 +16,16 @@ TMPDIR="$PWD/.research" python3 protocol/tests/run_gateway_generic.py \
 
 When omitted, `--common-source` uses
 `.research/generic-pinned-arm-example/firmware_common-src` below the workspace.
-The runner verifies the gateway and generic vendored CAN codec copies are
-identical before linking the gateway implementation. Compilation uses C11,
+The runner verifies both device `shared-cyphal` snapshots match every canonical
+file before linking the gateway copy. Compilation uses C11,
 warnings as errors and enabled assertions; the optional sanitizer flag enables
-AddressSanitizer and UndefinedBehaviorSanitizer. Temporary build files are
-removed after execution. No unpublished remote commit is required.
+AddressSanitizer and UndefinedBehaviorSanitizer. Temporary build files live in
+the workspace `.research/` and are removed after execution. No unpublished
+remote commit is required.
 
 The test drives real debounced contacts, eight ADC axes, four hats and a
-quadrature encoder with 128 logical buttons. It exchanges actual encoded CAN
-frames through ANNOUNCE/ASSIGN, registry serialization, apply and full input
+quadrature encoder with 128 logical buttons. Two actual Cyphal instances exchange
+CAN frames through discovery/assignment, registry serialization, apply and full input
 delivery. ACKs come from the gateway's successful USB interrupt completion
 function, then pass through the generic client's history/lease checks before
 crediting encoder phases. Submission, corrupted completion, stale ACKs and
@@ -36,9 +38,40 @@ preserves their identities.
 This verifies portable firmware interoperability. It does not establish actual
 CAN arbitration, USB enumeration, interrupt delivery, physical wiring or flash
 power-loss behavior; those require their own board and journal checks. Canonical
-wire examples remain under `../test-vectors/`.
+generated payload and transport tests live under `../cyphal/tests/`.
 
-On 2026-10-12 this runner passed against the local gateway and generic sources
-with AddressSanitizer and UndefinedBehaviorSanitizer enabled. The common source
-checkout matched the generic firmware's published pin
-`35e06787fb9696977fe92d20c5ff5afc1e3e1ebf`.
+The same runner also executes `multi_device_integration.c`: ten independent real
+device CAN clients broadcast through a deterministic frame queue to one actual
+gateway core and transport. Fault injection selects a sender and Cyphal subject,
+then drops or delays a fixed number of emitted frames; reverse queue delivery
+exercises reordered traffic. Every other endpoint receives broadcast frames.
+The suite checks lost announcements and assignments, delayed discovery, older
+input arriving after newer input, delayed and dropped completion ACKs, isolated
+input freshness loss, offline/reconnect recovery and stable per-identity slots.
+Device reboots destroy and reinitialize the client with an incremented boot
+session, testing both a changed CAN source and reuse of the original source.
+Gateway reboot restores the encoded registry and advances the simulated persisted
+epoch. Retained old input/ACK frames must not credit the rebooted device, and old
+input must not activate restored gateway slots before fresh discovery and input.
+Recovery is checked over bounded simulated time; CAN transfer-ID suppression
+means recovery after loss or source reuse need not happen on the first frame.
+The multi-device suite supplies distinct valid button/axis reports directly;
+the existing single-device suite continues to exercise acquisition and encoder
+delivery. Neither suite executes STM32 startup, HAL, TinyUSB or physical flash.
+
+GitHub Actions runs both integration suites with AddressSanitizer and
+UndefinedBehaviorSanitizer on pushes, pull requests and manual dispatches in
+`protocol`, `device-template` and `device-gateway` through each repository's
+`.github/workflows/cyphal-integration.yml`. The triggering repository uses the
+event checkout (including the pull-request merge); its two companions use
+`main`. Both firmware common pins must match, and that exact common commit is
+checked out. The runner also enforces matching canonical Cyphal snapshots.
+Coordinated protocol migrations therefore require compatible companion changes
+on `main` before all three checks can pass. All CI checkouts and scratch builds
+live under `.research/ci/`; sanitizer findings fail the job.
+
+On 2026-10-12 the Cyphal runner passed against the local gateway and generic
+sources with AddressSanitizer and UndefinedBehaviorSanitizer enabled. Native
+gateway behavior/journal, all eight generic profile/HID/client tests and the
+shared transport suite also passed. Firmware-common can be supplied through `--common-source`; this migration
+does not change acquisition or the devices' published common dependency pin.

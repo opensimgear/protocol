@@ -1,0 +1,9 @@
+# Application ownership/liveness. Published in addition to standard uavcan.node.Heartbeat.
+uint8 logical_node
+uint8 direct_usb
+uint8[16] unique_id
+uint32 boot_session
+uint32 lease
+uint32 sequence
+@sealed
+

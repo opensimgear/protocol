@@ -27,19 +27,24 @@ def main() -> None:
     compiler = shutil.which(args.cc)
     if compiler is None:
         parser.error(f"Host C compiler is unavailable: {args.cc}")
-    # Generic ships the codec for independent builds. Reject a stale vendored
-    # copy before linking the real gateway codec into this integration binary.
-    for relative in ("include/opensimgear/gateway_protocol.h", "src/gateway_protocol.c"):
-        source = gateway / relative
-        copy = generic / "shared-gateway" / relative
-        if not source.is_file() or not copy.is_file():
-            parser.error(f"Required CAN v2 codec source is missing: {source} or {copy}")
-        if source.read_bytes() != copy.read_bytes():
-            parser.error(f"Gateway and generic CAN codec copies differ: {relative}")
+    # Both devices carry the canonical stack for independent offline builds.
+    canonical = Path(__file__).resolve().parents[1] / "cyphal"
+    for source in canonical.rglob("*"):
+        if not source.is_file():
+            continue
+        relative = source.relative_to(canonical)
+        for root in (gateway, generic):
+            copy = root / "shared-cyphal" / relative
+            if not copy.is_file() or source.read_bytes() != copy.read_bytes():
+                parser.error(f"Cyphal snapshot differs from canonical source: {copy}")
+    cyphal = gateway / "shared-cyphal"
     sources = [
         Path(__file__).resolve().with_name("gateway_generic_integration.c"),
+        Path(__file__).resolve().with_name("multi_device_integration.c"),
         gateway / "src/gateway.c",
-        gateway / "src/gateway_protocol.c",
+        cyphal / "src/gateway_protocol.c",
+        cyphal / "src/cyphal.c",
+        cyphal / "vendor/libcanard/canard.c",
         gateway / "src/gateway_registry.c",
         generic / "src/can_client.c",
         generic / "src/can_delivery.c",
@@ -53,17 +58,21 @@ def main() -> None:
     flags = ["-std=c11", "-O1", "-g", "-Wall", "-Wextra", "-Werror", "-UNDEBUG"]
     if args.sanitize:
         flags += ["-fsanitize=address,undefined", "-fno-omit-frame-pointer"]
-    with tempfile.TemporaryDirectory(prefix="osg-gateway-generic-") as temporary:
+    scratch = workspace / ".research"
+    scratch.mkdir(exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="osg-gateway-generic-", dir=scratch) as temporary:
         executable = Path(temporary) / "gateway-generic-integration"
         command = [compiler, *flags, "-I", str(gateway / "include"), "-I", str(generic / "include"),
-                   "-I", str(common / "include"), *(str(source) for source in sources), "-o", str(executable)]
+                   "-I", str(common / "include"), "-I", str(cyphal / "include"),
+                   "-I", str(cyphal / "generated"), "-I", str(cyphal / "vendor/libcanard"),
+                   *(str(source) for source in sources), "-o", str(executable)]
         print(f"Workspace: {workspace}", flush=True)
         print(f"Common source: {common}", flush=True)
         print("Compile: " + shlex.join(command), flush=True)
         subprocess.run(command, check=True)
         subprocess.run([str(executable)], check=True)
-        digest = hashlib.sha256((gateway / "src/gateway_protocol.c").read_bytes()).hexdigest()
-        print(f"Matched gateway/generic codec SHA-256: {digest}", flush=True)
+        digest = hashlib.sha256((cyphal / "src/cyphal.c").read_bytes()).hexdigest()
+        print(f"Matched canonical/gateway/generic Cyphal transport SHA-256: {digest}", flush=True)
 
 
 if __name__ == "__main__":

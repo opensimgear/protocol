@@ -1,28 +1,29 @@
 # OpenSimGear protocol
 
-Shared wire contracts, reference code and conformance vectors for OpenSimGear firmware and Cockpit. The current implementation is a **private CAN FD v2 prototype** with a separate STM32 gateway CDC v2 API. Canonical Cyphal application schemas and a production protocol release remain future work.
+Shared wire contracts, generated DSDL and conformance checks for OpenSimGear firmware and Cockpit. The STM32 gateway and generic device use **Cyphal/CAN**, with a separate gateway CDC v2 API for Cockpit. The application contract is version 3; the replaced private CAN FD v2 codec remains as a historical reference.
 
 ## Implemented contracts
 
 | Contract | Consumers | Current behavior |
 | --- | --- | --- |
-| [Private CAN FD v2](reference/can-fd-v2/README.md) | STM32 device-gateway, generic Rev B module and Python peer | Identity/profile announcement, node/lease assignment, input reports, heartbeats and USB-completion acknowledgements |
+| [Cyphal/CAN](cyphal/README.md) | STM32 device-gateway, generic Rev B device and native-backed Python peer | Generated identity/profile, controller lease, input and delivery-ACK transfers; node-ID autoconfiguration, heartbeat and node information |
 | [STM32 gateway CDC v2](serial/stm32-gateway-v2.md) | Gateway firmware and Cockpit's Rust STM32 adapter | Correlated bounded snapshots, inventory and registry staging, epoch-guarded mutation and explicit persistent Apply layout |
 
-CAN v2 supports up to ten chain-local nodes and profiles with 128 buttons, four hats and eight axes. Direct module USB has input priority. Sequence/session/lease checks reject stale delivery; gateway USB completion credits encoder pulses. Persisted gateway slots survive temporary absence and remain neutral when inputs are unavailable. These application rules are implemented by the consuming firmware, not by Cyphal.
+The gateway supports up to ten controller slots and profiles with 128 buttons, four hats and eight axes. These slots are independent of Cyphal node IDs. Direct device USB has input priority. Sequence/session/lease and source-node checks reject stale delivery; gateway USB completion credits encoder pulses. Persisted gateway slots survive temporary absence and remain neutral when inputs are unavailable. These application rules remain above the Cyphal transport.
 
-As of 2026-10-12, reference-code/fixture checks and cross-firmware integration pass, including sanitized software runs. Cockpit consumes actual C formatter fixtures. This establishes portable source interoperability; assembled STM32 USB/CAN, timing, power and flash brownout behavior remain unverified.
+Cockpit consumes actual C formatter fixtures. Software tests establish portable source interoperability; assembled STM32 USB/CAN, timing, power and flash brownout behavior remain unverified.
 
-CAN v2 rejects v1 wire peers. The gateway can migrate its older persisted v1 registry, which is distinct from wire compatibility. The Pico W simulator uses its own protocol-1 adapter and is not a CAN v1/v2 peer. Update matching STM32 module/gateway firmware together. See [compatibility](compatibility/README.md).
+Cyphal firmware rejects the replaced private CAN v1/v2 wire peers. Existing registry storage remains compatible, including its older v1 migration. The Pico W simulator uses its own protocol-1 adapter. Update matching STM32 device/gateway firmware together. See [compatibility](compatibility/README.md).
 
 ## Layout
 
-- [reference/can-fd-v2/](reference/can-fd-v2/README.md): reviewed C codec snapshot and SHA-256 manifest.
+- [cyphal/](cyphal/README.md): canonical bounded transport, generated bindings and pinned libcanard source, snapshotted into each device for independent builds.
+- [reference/can-fd-v2/](reference/can-fd-v2/README.md): historical private codec snapshot and SHA-256 manifest.
 - [serial/](serial/README.md): implemented STM32 CDC v2 API and future serial configuration/output scope.
-- [test-vectors/](test-vectors/README.md): canonical CAN frames and actual gateway formatter snapshots.
+- [test-vectors/](test-vectors/README.md): historical private CAN frames and current gateway formatter snapshots.
 - [tests/](tests/README.md): integration runner linking gateway, generic client and shared acquisition code.
-- `tools/verify_can_vendors.py`: checks reference/firmware codec copies and stored or freshly generated fixtures.
-- [dsdl/](dsdl/README.md): placeholder for future Cyphal DSDL definitions; no application schemas or port IDs are assigned.
+- `tools/verify_can_vendors.py`: checks canonical transport snapshots and stored or freshly generated CDC fixtures.
+- [dsdl/](dsdl/README.md): canonical application schemas and local subject allocation.
 - [compatibility/](compatibility/README.md): prototype version boundaries and production release policy.
 
 ## Verify adjacent checkouts
@@ -52,7 +53,7 @@ Generate bindings where supported, otherwise check adapters against shared vecto
 ## Related repositories
 
 - [Device gateway](https://github.com/opensimgear/device-gateway): gateway CAN/CDC/HID implementation and electronics.
-- [Device template](https://github.com/opensimgear/device-template): generic module and private v2 client.
+- [Device template](https://github.com/opensimgear/device-template): generic Cyphal device with direct USB input ownership.
 - [Firmware common](https://github.com/opensimgear/firmware-common): reusable acquisition and USB code; pinned protocol source dependency.
 - [Cockpit](https://github.com/opensimgear/cockpit): native host adapters and controller registration UI.
 - [Website](https://github.com/opensimgear/opensimgear.github.io): architecture and user documentation.

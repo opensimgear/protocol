@@ -1,0 +1,7 @@
+# Stable device identity and boot-specific input profile. Cyphal node-ID comes from transfer metadata.
+uint8[16] unique_id
+uint32 boot_session
+uint8 direct_usb
+Profile.1.0 profile
+@sealed
+

@@ -1,0 +1,8 @@
+# Published only after successful gateway USB interrupt completion of this exact report.
+uint8 logical_node
+uint32 boot_session
+uint32 lease
+uint32 sequence
+uint8[34] report
+@sealed
+

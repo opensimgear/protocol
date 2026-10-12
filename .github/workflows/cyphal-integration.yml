@@ -1,0 +1,68 @@
+name: Cyphal multi-device integration
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  multi-device-native:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
+      UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+    steps:
+      - name: Check out protocol
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          path: .research/ci/protocol
+          persist-credentials: false
+      - name: Check out device-template
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: opensimgear/device-template
+          ref: main
+          path: .research/ci/device-template
+          persist-credentials: false
+      - name: Check out device-gateway
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: opensimgear/device-gateway
+          ref: main
+          path: .research/ci/device-gateway
+          persist-credentials: false
+      - name: Resolve matching pinned common source
+        id: common
+        shell: bash
+        run: |
+          python3 - <<'PYTHON'
+          import os
+          import re
+          from pathlib import Path
+          root = Path('.research/ci')
+          pins = []
+          for repo in ('device-template', 'device-gateway'):
+              text = (root / repo / 'firmware/cmake/common-revision.cmake').read_text()
+              match = re.search(r'set\(OSG_COMMON_REVISION\s+([0-9a-f]{40})\)', text)
+              if not match:
+                  raise SystemExit(f'Missing common revision in {repo}')
+              pins.append(match[1])
+          if pins[0] != pins[1]:
+              raise SystemExit('Firmware common pins differ; integration requires matching sources')
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write(f'revision={pins[0]}\n')
+          PYTHON
+      - name: Check out pinned common source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: opensimgear/firmware-common
+          ref: ${{ steps.common.outputs.revision }}
+          path: .research/ci/firmware-common
+          persist-credentials: false
+      - name: Test discovery, messaging and reboot recovery with sanitizers
+        shell: bash
+        run: |
+          export TMPDIR="$GITHUB_WORKSPACE/.research/ci/.research"
+          mkdir -p "$TMPDIR"
+          python3 .research/ci/protocol/tests/run_gateway_generic.py \
+            --workspace "$GITHUB_WORKSPACE/.research/ci" \
+            --common-source "$GITHUB_WORKSPACE/.research/ci/firmware-common" \
+            --sanitize

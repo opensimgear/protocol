@@ -27,7 +27,7 @@ epoch-bound session when the gateway restarts.
 Responses use this envelope (`error` is null on success):
 
 ```json
-{"id":1,"ok":true,"error":null,"state":{"gatewayType":"stm32-can-gateway","protocol":2,"canProtocol":2,"firmware":"0.2.0","identity":"00112233445566778899aabb","epoch":1,"running":true,"needsApply":false,"maxModules":10,"modules":[]}}
+{"id":1,"ok":true,"error":null,"state":{"gatewayType":"stm32-can-gateway","protocol":2,"canProtocol":3,"firmware":"0.3.0","identity":"00112233445566778899aabb","epoch":1,"running":true,"needsApply":false,"maxModules":10,"modules":[]}}
 ```
 
 Each module supplies `identity` (32hex), `online`, `directUsb`, `node` (chain-local
@@ -37,10 +37,15 @@ Each module supplies `identity` (32hex), `online`, `directUsb`, `node` (chain-lo
 entries each in `axisUsage` and `neutral`. Profiles must contain at least one
 control; usages are distinct 0x30–0x38 and neutral values are u16. Report length is
 `ceil(buttons/8)+ceil(hats/2)+2*axes`; decoding follows the
-[CAN v2 reference](../reference/can-fd-v2/README.md). Invalid padding, hats or
+[Cyphal application contract](../cyphal/README.md). Invalid padding, hats or
 lengths are rejected. Slots are -1 (absent) or 0–9. Each occupied slot has one
 identity. Input ownership and observed/published profile compatibility are
 explicit, rather than inferred from a socket or node number.
+
+`protocol=2` versions this CDC console. `canProtocol=3` identifies the Cyphal
+application contract; older private CAN gateways report `2`. Cockpit accepts
+both console variants. The module `node` field is a logical controller route
+0–10 and is independent of its automatically configured Cyphal CAN node ID.
 
 The report uses the **observed** profile. Offline, direct-USB-owned, stale,
 inactive or profile-mismatched modules return its neutral report. `profileMatch`

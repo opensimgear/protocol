@@ -1,0 +1,8 @@
+# Exact full HID report. Sequence and lease reject stale application delivery independently of transport IDs.
+uint8 logical_node
+uint32 boot_session
+uint32 lease
+uint32 sequence
+uint8[34] report
+@sealed
+
