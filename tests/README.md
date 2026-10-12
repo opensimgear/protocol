@@ -77,7 +77,7 @@ The runner also executes deterministic randomized stress for seeds `0x13579bdf`,
 frame/event trace digest. Separate xorshift32 streams drive the event schedule
 and wire faults. The harness normalizes libcanard's initial address-mixed PRNG
 state after construction/reset so ASLR cannot alter replayed collision choices;
-the firmware and vendored transport are unchanged. Each run combines 60 seconds
+the firmware and vendored transport are unchanged. Each run combines 80 seconds
 of simulated activity with roughly
 12% frame loss, 28% delayed frames (10–400 ms), reversed delivery order, device
 and gateway reboots, occupied CAN node IDs and temporary direct USB ownership.
@@ -99,10 +99,34 @@ checked; expired frames are consumed without wire delivery, matching the board
 driver's queue-discard behavior. Input provenance follows queued frame bytes and
 ACK provenance follows retained successful USB snapshots even when emission is
 delayed by pressure.
+
+Bus-off scenarios inject the board's reported recovery state on all ten device
+controllers and the gateway. CAN transmit admission and receive are disabled
+during recovery. The harness mirrors firmware main-loop boundaries: a device
+resets its client route on entry, while the gateway resets transport and revokes
+all leases on entry and on successful controller restart. Boot sessions and CAN
+source IDs survive these resets. Queued real application transfers must be purged;
+every controller experiences one or two failed restart attempts at the board's
+1-second retry interval before success. Recovery can overlap other faults and
+continues naturally after new fault injection stops.
+
+Disconnects block both CAN directions without revoking a gateway route directly.
+Five devices keep running while unplugged; five stop ticking and reboot into a
+new boot session on reconnect. Every device gets an initial 2.2–3.2-second absence
+that must expire gateway inventory and expose a neutral report by 2 seconds,
+allowing for already-departed delayed frames. Later disconnects also include
+100–400 ms absences that overlap delayed traffic. Wire emission and accepted ACK
+counts must remain unchanged while an endpoint is unavailable. Delayed frames
+already on the wire remain in flight for other endpoints; frames received while
+offline are discarded rather than replayed on reconnect. Permanent registry
+slots remain stable through absence and rediscovery.
+
 A shuffled initial sweep guarantees a reboot, collision injection and USB
-takeover/release for every device; coverage checks additionally require actual
-loss/delay and acknowledged messaging for every device, gateway reboots and
-observed gateway source migration. USB completions are delayed by 10–200 ms,
+takeover/release, bus-off recovery and disconnect/reconnect for every device;
+coverage checks additionally require actual loss/delay and acknowledged messaging
+for every device, gateway reboot/source migration/bus-off recovery, failed
+restarts, purged transmit queues, suppressed receives and offline expiration.
+USB completions are delayed by 10–200 ms,
 including snapshots retained across ownership/session changes.
 
 Checks during the fault phase cover stable registry slots, unique live gateway
@@ -110,7 +134,9 @@ routes/sources, bounded transport pools/queues, neutral unavailable/USB-owned
 slots, source/session/lease and sequence guards, identity-specific report bytes,
 and ACK provenance from an immutable successful USB completion. Invalidated USB
 snapshots must not produce ACKs. After faults stop, pending traffic remains and
-all ownership is released. Within a further 35 seconds of simulated time every
+all ownership is released. Scheduled controller restarts and reconnects still
+run, and their completed counts must match fault-entry counts. Within a further
+35 seconds of simulated time every
 device must recover discovery, current source/session binding, exact input
 reports and successful completion ACKs. All transmit queues must drain, and
 transport destruction must return every fixed-pool block. The test uses simulated time, without
@@ -120,7 +146,9 @@ Failure diagnostics include seed, simulated time and event index. To replay
 one seed, append `--stress-seed 0x13579bdf` to the runner command above; it still
 runs the focused suites and repeats the selected stress seed twice. This stress
 test checks portable behavior and does not emulate CAN arbitration, STM32 HAL
-or physical USB. Corruption targets detectable malformed traffic: arbitrary
+or physical USB. Bus-off is a simulated controller state, not electrical fault
+injection, error-counter validation or execution of the HAL restart routine.
+Corruption targets detectable malformed traffic: arbitrary
 valid single-frame CAN FD payload changes have no Cyphal transfer CRC, while
 physical CAN CRC rejection is outside the harness. Its fixed corpus is bounded coverage rather than exhaustive
 fault exploration.
