@@ -1,7 +1,7 @@
-# USB serial protocol
+# USB serial contracts
 
-Define bounded framing, addressing, capabilities, configuration, diagnostics, and explicit output-session ownership here. Supply versioned SimHub-compatible command definitions when implemented.
+[stm32-gateway-v2.md](stm32-gateway-v2.md) documents the implemented private STM32 gateway API: bounded correlated snapshots, discovered capabilities, pending/active controller slots, epoch-guarded register/unregister and explicit persistent Apply layout. Cockpit's native STM32 adapter consumes the gateway's actual C formatter fixtures.
 
-The shared model must distinguish stable gateway identity, stable module identity, and transient chain-local node ID. Define gateway inventory snapshots/change notifications covering capabilities, registration/slot, ownership, health/freshness, and connection/session revision. Commands and responses must identify the intended unit and current session; reject stale address/identity pairings after address reuse or gateway restart. Support independent gateway serial endpoints, direct USB/CAN deduplication, attachment changes, and explicit identity-conflict diagnostics. No physical socket address exists on the gateway's single bus.
+The generic module's direct USB console provides diagnostics rather than runtime settings or calibration. The Pico W simulator has a separate protocol-1 API documented in [its repository](https://github.com/opensimgear/cockpit/tree/main/simulator/pico); neither API is the finalized production serial protocol.
 
-No wire format or command API is finalized yet.
+Canonical cross-device configuration, diagnostics and SimHub output/session APIs remain future work. They need stable gateway/module identities, current-session addressing, bounded schemas, one configuration writer and explicit output freshness/ownership. Multiple chains can reuse node IDs; direct USB/CAN deduplication, attachment changes and duplicate-identity diagnostics must be implemented before routing across them. A physical socket is not an address on the gateway's single shared bus. No ready-to-use SimHub profiles are supplied.

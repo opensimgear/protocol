@@ -1,3 +1,11 @@
 # Conformance vectors
 
-Add transport/model inputs with expected decoded outputs or diagnostics for firmware and cockpit adapters. Cover framing, limits, compatibility, and session behavior. Include overlapping node IDs across distinct gateways, inventory reconciliation, direct USB/CAN sightings of one module, gateway moves, duplicate stable identities on independent chains, stale responses after reconnect, and rejected writes after node-ID reuse. Vectors must demonstrate correct destination identity and failure diagnostics, without relying on physical socket addressing. No vectors are implemented yet.
+`can-fd-v2.json` contains fresh C codec frames for all five types and maximum
+profiles. `stm32-gateway-v2.json` contains actual C formatter snapshots for
+discovered, pending, active, direct USB, offline, stale epoch and changed profile
+states. Gateway tests generate these with `osg_gateway_test --vectors` and
+`--cockpit-vectors`; Cockpit Rust tests decode a vendored copy of the latter.
+These exercise prototype v2 interoperability, not the future Cyphal schema.
+
+Future canonical vectors must also cover simultaneous independent gateways,
+cross-chain identity conflicts and output/configuration session routing.
