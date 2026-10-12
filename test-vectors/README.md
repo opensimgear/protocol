@@ -1,3 +1,3 @@
 # Conformance vectors
 
-Add transport/model inputs with expected decoded outputs or diagnostics for firmware and cockpit adapters. Cover framing, limits, compatibility, and session behavior. No vectors are implemented yet.
+Add transport/model inputs with expected decoded outputs or diagnostics for firmware and cockpit adapters. Cover framing, limits, compatibility, and session behavior. Include overlapping node IDs across distinct gateways, inventory reconciliation, direct USB/CAN sightings of one module, gateway moves, duplicate stable identities on independent chains, stale responses after reconnect, and rejected writes after node-ID reuse. Vectors must demonstrate correct destination identity and failure diagnostics, without relying on physical socket addressing. No vectors are implemented yet.

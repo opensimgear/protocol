@@ -15,9 +15,13 @@ Repository scaffold initialized. Architecture semantics are agreed, but concrete
 
 ## Agreed semantics
 
-USB serial and CAN share a versioned, bounded capability model; their wire framing may differ. The model covers stable unit identity, model/hardware information, available controls/outputs, configuration, health, and compatibility. Incompatible versions produce a clear diagnostic rather than silently guessing.
+USB serial and CAN share a versioned, bounded capability model; their wire framing may differ. The model covers stable module and gateway identities, model/hardware information, available controls/outputs, gateway inventories and attachment, configuration, health, and compatibility. Incompatible versions produce a clear diagnostic rather than silently guessing.
 
-Node IDs are allocated per CAN segment; gateway controller assignments persist by stable module identity. Registration/layout changes require deliberate USB reconnect, while temporary unplugging preserves slots. Configuration permits one writer per module with explicit Apply/Save and interrupted-write protection. Output ownership uses explicit active sessions and freshness, with direct USB serial priority and fresh gateway fallback.
+Each gateway owns one CAN chain through two parallel sockets. Multiple gateways connect independently by USB; their CAN and powered chains must remain separate. Node IDs are allocated per gateway chain and may overlap across gateways. Host routes use stable gateway and module identities, resolve the current node ID, and bind requests/responses to the current connection/session to reject stale work or address reuse. Gateway discovery supplies inventory snapshots and changes with module identity, capabilities, node ID, registration, ownership, and freshness. Socket location is not discoverable on the shared bus.
+
+Gateway controller assignments persist by stable module identity within each gateway registry. The cockpit merges direct USB/CAN sightings into one logical device and records current gateway attachment separately from the active route and last-known attachment. Duplicate identities on independent chains are diagnosed and block automatic routed writes. Moving a module between gateways preserves its identity/settings but requires explicit destination registration unless it has a compatible slot there; the old slot remains absent until explicit removal. Game binding continuity across gateway USB identities is not guaranteed.
+
+Registration/layout changes require deliberate USB reconnect, while temporary unplugging preserves slots. Configuration permits one writer per module with explicit Apply/Save and interrupted-write protection. Output ownership uses explicit active sessions and freshness, with direct USB serial priority and fresh gateway fallback.
 
 ## Implementation and release policy
 
