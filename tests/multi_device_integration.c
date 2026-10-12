@@ -18,7 +18,7 @@ struct bus {
     endpoint_t endpoints[DEVICES+1];
     uint8_t reports[DEVICES][OSG_GW_MAX_REPORT_SIZE];
     packet_t queue[QUEUE];
-    unsigned count, drops, delays, reorders, completed[DEVICES];
+    unsigned count, drops, delays, reorders, gateway_migrations, completed[DEVICES];
     unsigned fault_sender, fault_subject, drop_remaining, delay_remaining;
     uint32_t delay_ms, now;
     bool reverse, muted[DEVICES];
@@ -44,7 +44,15 @@ static void receive_multi(bus_t *b,const packet_t *p) {
      * unrelated to its application subscriptions and occupancy tracking. */
     if(p->sender!=GATEWAY) {
         osg_gateway_message_t m,reply;
-        if(osg_cyphal_receive(&b->transport,&p->frame,b->now,&m)) {
+        uint8_t source=osg_cyphal_node_id(&b->transport);
+        bool received=osg_cyphal_receive(&b->transport,&p->frame,b->now,&m);
+        if(source!=osg_cyphal_node_id(&b->transport)) {
+            b->gateway_migrations++;
+            /* Mirror the board loop's gateway source migration boundary. */
+            osg_cyphal_reset(&b->transport);
+            osg_gateway_bus_reset(&b->gateway);
+            osg_gateway_set_running(&b->gateway,true);
+        } else if(received) {
             osg_gateway_receive_result_t r=osg_gateway_receive(&b->gateway,&m,b->now,&reply);
             if(r==OSG_GW_RX_ASSIGNMENT) assert(osg_cyphal_send(&b->transport,&reply,b->now));
         }
@@ -116,6 +124,114 @@ static void complete_multi(bus_t *b,unsigned i) {
     osg_gateway_message_t ack;
     assert(osg_gateway_delivery_complete(&b->gateway,&d,packet,size+1,&ack));
     assert(osg_cyphal_send(&b->transport,&ack,b->now));
+}
+static void ready_multi(bus_t *b) {
+    init_multi(b);tick_multi(b,0);
+    for(unsigned i=0;i<DEVICES;i++) {
+        assert(osg_can_client_active(&b->clients[i]));
+        assert(osg_gateway_register(&b->gateway,&b->clients[i].identity));
+    }
+    osg_gateway_apply_layout(&b->gateway);osg_gateway_set_running(&b->gateway,true);
+    tick_multi(b,10);
+    for(unsigned i=0;i<DEVICES;i++) check_report(b,i,false);
+}
+static void destroy_multi(bus_t *b) {
+    assert(b->count==0);
+    for(unsigned i=0;i<DEVICES;i++) osg_cyphal_destroy(&b->clients[i].cyphal);
+    osg_cyphal_destroy(&b->transport);
+}
+static osg_gateway_delivery_t pending_multi(bus_t *b,unsigned i,uint8_t packet[OSG_GW_MAX_REPORT_SIZE+1]) {
+    osg_gateway_delivery_t d;packet[0]=(uint8_t)(i+1);
+    assert(osg_gateway_delivery_prepare(&b->gateway,i,packet+1,OSG_GW_MAX_REPORT_SIZE,&d)==3);
+    assert(d.valid);return d;
+}
+static void usb_ownership_multi(bus_t *b) {
+    ready_multi(b);
+    uint8_t packet[OSG_GW_MAX_REPORT_SIZE+1];
+    osg_gateway_delivery_t pending=pending_multi(b,0,packet);
+    fault(b,GATEWAY,OSG_CYPHAL_SUBJECT_INPUT_ACK,0,1,100);complete_multi(b,0);
+    fault(b,0,OSG_CYPHAL_SUBJECT_INPUT,0,1,100);tick_multi(b,20);
+    uint32_t lease=b->clients[0].lease;
+    assert(osg_can_client_usb(&b->clients[0],true));tick_multi(b,21);
+    assert(!osg_can_client_active(&b->clients[0]) && module(b,0)->direct_usb);
+    check_report(b,0,true);
+    osg_gateway_message_t ack;
+    assert(!osg_gateway_delivery_complete(&b->gateway,&pending,packet,4,&ack));
+    osg_gateway_delivery_t neutral;
+    uint8_t neutral_report[OSG_GW_MAX_REPORT_SIZE];
+    assert(osg_gateway_delivery_prepare(&b->gateway,0,neutral_report,sizeof neutral_report,&neutral)==3 && !neutral.valid);
+    for(uint32_t t=30;t<=130;t+=10) tick_multi(b,t);
+    assert(b->completed[0]==0 && b->clients[0].ack_sequence==0);
+    check_report(b,0,true);
+    for(unsigned i=1;i<DEVICES;i++) { check_report(b,i,false);complete_multi(b,i); }
+    pump_multi(b);
+    /* Release ownership, but lose the first fresh input: gateway stays neutral
+     * until another input arrives, and cannot ACK a pre-ownership snapshot. */
+    fault(b,0,OSG_CYPHAL_SUBJECT_INPUT,1,0,0);
+    assert(osg_can_client_usb(&b->clients[0],false));tick_multi(b,131);
+    assert(osg_can_client_active(&b->clients[0]) && !module(b,0)->direct_usb);
+    assert(b->clients[0].lease==lease);check_report(b,0,true);
+    assert(!osg_gateway_delivery_complete(&b->gateway,&pending,packet,4,&ack));
+    tick_multi(b,141);check_report(b,0,false);complete_multi(b,0);pump_multi(b);
+    assert(b->completed[0]==1 && b->clients[0].ack_sequence==module(b,0)->input_sequence);
+    for(unsigned i=1;i<DEVICES;i++) assert(b->completed[i]==1);
+    destroy_multi(b);
+    puts("PASS: direct USB takeover/release on a ten-device bus; stale input/ACK and USB completion blocked, fresh input required, other devices unaffected");
+}
+static void collision_multi(bus_t *b,bool gateway_collision) {
+    ready_multi(b);
+    unsigned victim=gateway_collision ? GATEWAY : 0, newcomer=1;
+    uint8_t source=gateway_collision ? osg_cyphal_node_id(&b->transport) : osg_cyphal_node_id(&b->clients[victim].cyphal);
+    uint32_t leases[DEVICES];for(unsigned i=0;i<DEVICES;i++) leases[i]=b->clients[i].lease;
+    uint32_t generation=b->clients[0].generation;
+    uint8_t packet[OSG_GW_MAX_REPORT_SIZE+1];
+    osg_gateway_delivery_t pending=pending_multi(b,0,packet);
+    /* Gateway migration is learned by clients after their current assignment
+     * expires. Retain old traffic until after that rediscovery boundary. */
+    uint32_t delay=gateway_collision ? 2500U : 100U;
+    fault(b,GATEWAY,OSG_CYPHAL_SUBJECT_INPUT_ACK,0,1,delay);complete_multi(b,0);
+    fault(b,0,OSG_CYPHAL_SUBJECT_INPUT,0,1,delay);tick_multi(b,20);
+    /* A rebooted endpoint appears at an already occupied transport address.
+     * Emit a real standard Heartbeat; libcanard must detect and repair it. */
+    osg_gateway_identity_t id=b->clients[newcomer].identity;
+    osg_gateway_profile_t profile=b->clients[newcomer].profile;
+    osg_cyphal_destroy(&b->clients[newcomer].cyphal);
+    assert(osg_can_client_init(&b->clients[newcomer],&id,&profile,2,enqueue_multi,&b->endpoints[newcomer]));
+    assert(canard_set_node_id(&b->clients[newcomer].cyphal.canard,source));
+    b->now=21;osg_cyphal_tick(&b->clients[newcomer].cyphal,21);pump_multi(b);
+    if(gateway_collision) {
+        assert(b->gateway_migrations==1 && osg_cyphal_node_id(&b->transport)!=source);
+        for(unsigned i=0;i<DEVICES;i++) { assert(!module(b,i)->lease);check_report(b,i,true); }
+    } else {
+        assert(b->clients[victim].generation>generation);
+        assert(osg_cyphal_node_id(&b->clients[victim].cyphal)!=source);
+        assert(!osg_can_client_active(&b->clients[victim]) && b->clients[victim].ack_sequence==0);
+    }
+    b->reports[0][0]=0x81; /* Retained input has different bytes from fresh input. */
+    /* Discover under the repaired source before retained old traffic arrives. */
+    for(uint32_t t=22;t<=132;t+=10) tick_multi(b,t);
+    assert(b->completed[0]==0 && b->clients[0].ack_sequence==0);
+    osg_gateway_message_t ack;
+    assert(!osg_gateway_delivery_complete(&b->gateway,&pending,packet,4,&ack));
+    for(uint32_t t=142;t<=3142;t+=10) {
+        tick_multi(b,t);
+        if(module(b,0)->has_input) check_report(b,0,false);
+    }
+    for(unsigned i=0;i<DEVICES;i++) {
+        assert(osg_can_client_active(&b->clients[i]));check_report(b,i,false);
+        assert(module(b,i)->source_node==osg_cyphal_node_id(&b->clients[i].cyphal));
+        assert(b->clients[i].gateway_source==osg_cyphal_node_id(&b->transport));
+        assert(osg_cyphal_node_id(&b->clients[i].cyphal)!=osg_cyphal_node_id(&b->transport));
+        for(unsigned j=0;j<i;j++) assert(osg_cyphal_node_id(&b->clients[i].cyphal)!=osg_cyphal_node_id(&b->clients[j].cyphal));
+        if(gateway_collision || i==victim || i==newcomer) assert(b->clients[i].lease>leases[i]);
+        else assert(b->clients[i].lease==leases[i]);
+        complete_multi(b,i);
+    }
+    pump_multi(b);
+    for(unsigned i=0;i<DEVICES;i++) assert(b->completed[i]==1 && b->clients[i].ack_sequence==module(b,i)->input_sequence);
+    destroy_multi(b);
+    puts(gateway_collision ? "PASS: gateway CAN node-ID collision; all leases revoked, stable slots, source-bound rediscovery and messaging recovery" :
+                            "PASS: device CAN node-ID collision; automatic address repair, renewed leases, stale delivery rejection and isolated recovery");
 }
 void multi_device_integration_test(void) {
     /* Static storage avoids putting eleven transport pools on the host stack. */
@@ -223,4 +339,7 @@ void multi_device_integration_test(void) {
     for(unsigned i=0;i<DEVICES;i++) osg_cyphal_destroy(&b.clients[i].cyphal);
     osg_cyphal_destroy(&b.transport);
     puts("PASS: ten real clients; dropped discovery/assignment/input/ACK, delayed and reordered frames, isolated freshness/offline recovery, device reboot and gateway reboot with stable restored slots");
+    usb_ownership_multi(&b);
+    collision_multi(&b,false);
+    collision_multi(&b,true);
 }

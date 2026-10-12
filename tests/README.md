@@ -59,6 +59,19 @@ The multi-device suite supplies distinct valid button/axis reports directly;
 the existing single-device suite continues to exercise acquisition and encoder
 delivery. Neither suite executes STM32 startup, HAL, TinyUSB or physical flash.
 
+Additional ten-device scenarios inject a real standard Heartbeat from a rebooted
+client at an occupied device or gateway CAN node ID. They check libcanard address
+repair, route invalidation, renewed leases, stable registry slots, rejection of
+retained input/ACKs and stale USB completions, and source-bound messaging recovery.
+Device collisions preserve unaffected clients' leases. Gateway collision handling
+mirrors the board loop's transport reset and lease revocation boundary; clients
+learn the new gateway source after their current assignments expire. Old ACKs are
+retained until after that rediscovery, since clients cannot infer a remote source
+migration before observing it. This tests protocol behavior, not physical CAN
+arbitration. Direct USB takeover/release checks neutral fallback, rejected old
+delivery, lost first fresh input on release and continued delivery for the other
+nine clients. These scenarios use existing contracts without creating a release.
+
 GitHub Actions runs both integration suites with AddressSanitizer and
 UndefinedBehaviorSanitizer on pushes, pull requests and manual dispatches in
 `protocol`, `device-template` and `device-gateway` through each repository's
