@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import os
 from pathlib import Path
 import shlex
 import shutil
@@ -19,7 +20,11 @@ def main() -> None:
                         help="Pinned firmware-common source checkout (no download is attempted)")
     parser.add_argument("--cc", default="cc", help="Host C compiler executable")
     parser.add_argument("--sanitize", action="store_true", help="Enable AddressSanitizer and UndefinedBehaviorSanitizer")
+    parser.add_argument("--stress-seed", type=lambda value: int(value, 0),
+                        help="Replay one nonzero 32-bit stress seed (decimal or 0x hex); default runs three fixed seeds")
     args = parser.parse_args()
+    if args.stress_seed is not None and not 1 <= args.stress_seed <= 0xffffffff:
+        parser.error("--stress-seed must be in 1..4294967295")
     workspace = args.workspace.expanduser().resolve()
     common = (args.common_source or workspace / ".research/generic-pinned-arm-example/firmware_common-src").expanduser().resolve()
     gateway = workspace / "device-gateway/firmware"
@@ -70,7 +75,12 @@ def main() -> None:
         print(f"Common source: {common}", flush=True)
         print("Compile: " + shlex.join(command), flush=True)
         subprocess.run(command, check=True)
-        subprocess.run([str(executable)], check=True)
+        environment = os.environ.copy()
+        # Keep CI's default seed corpus independent of inherited overrides.
+        environment.pop("OSG_CYPHAL_STRESS_SEED", None)
+        if args.stress_seed is not None:
+            environment["OSG_CYPHAL_STRESS_SEED"] = str(args.stress_seed)
+        subprocess.run([str(executable)], check=True, env=environment)
         digest = hashlib.sha256((cyphal / "src/cyphal.c").read_bytes()).hexdigest()
         print(f"Matched canonical/gateway/generic Cyphal transport SHA-256: {digest}", flush=True)
 

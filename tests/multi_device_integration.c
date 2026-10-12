@@ -4,13 +4,24 @@
 #include "opensimgear/gateway.h"
 #include "can_client.h"
 #include <assert.h>
+#include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 
 enum { DEVICES=OSG_GW_MAX_MODULES, GATEWAY=DEVICES, QUEUE=4096 };
 typedef struct bus bus_t;
 typedef struct { bus_t *bus; unsigned sender; } endpoint_t;
-typedef struct { osg_gateway_frame_t frame; unsigned sender; uint32_t due; } packet_t;
+typedef struct {
+    osg_gateway_frame_t frame;
+    unsigned sender;
+    uint32_t due;
+    uint8_t input_report[OSG_GW_MAX_REPORT_SIZE];
+    bool has_ack;
+    osg_gateway_delivery_t ack;
+} packet_t;
+static uint32_t random_next(uint32_t *state) {
+    *state^=*state<<13;*state^=*state>>17;*state^=*state<<5;return *state;
+}
 struct bus {
     osg_gateway_t gateway;
     osg_cyphal_t transport;
@@ -22,17 +33,64 @@ struct bus {
     unsigned fault_sender, fault_subject, drop_remaining, delay_remaining;
     uint32_t delay_ms, now;
     bool reverse, muted[DEVICES];
+    bool stress, noise, emitting_ack;
+    uint32_t seed, noise_random, trace_hash, event;
+    unsigned sender_drops[DEVICES+1],sender_delays[DEVICES+1],stale_usb;
+    osg_gateway_delivery_t ack_origin;
 };
+/* Keep seed, simulated time and event number in every stress failure. */
+static void require_stress(const bus_t *b,bool condition,const char *check) {
+    if(!condition) {
+        fprintf(stderr,"STRESS FAIL seed=0x%08x time=%u event=%u: %s\n",b->seed,b->now,b->event,check);
+        abort();
+    }
+}
+#define STRESS_CHECK(b, condition) require_stress((b),(condition),#condition)
+static void trace_word(bus_t *b,uint32_t word) {
+    /* Fixed byte order for reproducibility across host architectures. */
+    for(unsigned i=0;i<4;i++) { b->trace_hash^=(word>>(i*8))&255U;b->trace_hash*=16777619U; }
+}
+static void deterministic_transport(bus_t *b,osg_cyphal_t *t) {
+    if(!b->stress) return;
+    /* Pinned libcanard 5.0 mixes its address into the constructor seed and
+     * consumes one splitmix64 step for the initial node ID. Remove only that
+     * constructor state (also after resets), so ASLR cannot change collision
+     * repair. Initial IDs are explicitly set; firmware/vendor code is untouched. */
+    uint64_t seed=UINT64_C(14695981039346656037);
+    for(unsigned i=0;i<sizeof t->identity.bytes;i++) seed=(seed^t->identity.bytes[i])*UINT64_C(1099511628211);
+    seed^=t->boot_session;
+    const uint64_t step=UINT64_C(0x9e3779b97f4a7c15);
+    if(t->canard.prng_state==(seed^(uintptr_t)&t->canard)+step)
+        t->canard.prng_state=(seed^b->seed)+step;
+}
 static unsigned subject(const osg_gateway_frame_t *f) { return (f->id>>8)&8191U; }
 static bool enqueue_multi(void *context,const osg_gateway_frame_t *frame) {
     endpoint_t *e=context; bus_t *b=e->bus;
+    if(b->stress) {
+        trace_word(b,b->now);trace_word(b,e->sender);trace_word(b,frame->id);
+        trace_word(b,frame->length);
+        for(unsigned i=0;i<frame->length;i++) trace_word(b,frame->data[i]);
+    }
+    uint32_t noise=b->noise ? random_next(&b->noise_random) : 0;
+    if(b->noise && noise%100U<12U) {
+        b->drops++;b->sender_drops[e->sender]++;trace_word(b,UINT32_MAX);return true;
+    }
     bool match=e->sender==b->fault_sender && subject(frame)==b->fault_subject;
     if(match && b->drop_remaining) { b->drop_remaining--; b->drops++; return true; }
     assert(b->count<QUEUE);
     packet_t p={.frame=*frame,.sender=e->sender,.due=b->now};
+    if(e->sender<DEVICES) memcpy(p.input_report,b->reports[e->sender],sizeof p.input_report);
+    if(b->stress && e->sender==GATEWAY && subject(frame)==OSG_CYPHAL_SUBJECT_INPUT_ACK) {
+        STRESS_CHECK(b,b->emitting_ack);p.has_ack=true;p.ack=b->ack_origin;
+    }
+    if(b->noise && noise%100U<40U) {
+        p.due+=10U+random_next(&b->noise_random)%391U;
+        b->delays++;b->sender_delays[e->sender]++;
+    }
     if(match && b->delay_remaining) {
         b->delay_remaining--; p.due+=b->delay_ms; b->delays++;
     }
+    if(b->stress) trace_word(b,p.due);
     b->queue[b->count++]=p; return true;
 }
 static void fault(bus_t *b,unsigned sender,unsigned port,unsigned drop,unsigned delay,uint32_t ms) {
@@ -44,21 +102,48 @@ static void receive_multi(bus_t *b,const packet_t *p) {
      * unrelated to its application subscriptions and occupancy tracking. */
     if(p->sender!=GATEWAY) {
         osg_gateway_message_t m,reply;
+        deterministic_transport(b,&b->transport);
         uint8_t source=osg_cyphal_node_id(&b->transport);
         bool received=osg_cyphal_receive(&b->transport,&p->frame,b->now,&m);
         if(source!=osg_cyphal_node_id(&b->transport)) {
             b->gateway_migrations++;
             /* Mirror the board loop's gateway source migration boundary. */
             osg_cyphal_reset(&b->transport);
+            deterministic_transport(b,&b->transport);
             osg_gateway_bus_reset(&b->gateway);
             osg_gateway_set_running(&b->gateway,true);
         } else if(received) {
+            osg_gateway_module_t before={0};
+            if(b->stress && m.type==OSG_GW_INPUT) {
+                int index=osg_gateway_find_module(&b->gateway,&b->clients[p->sender].identity);
+                STRESS_CHECK(b,index>=0);before=b->gateway.modules[index];
+                STRESS_CHECK(b,!memcmp(m.report,p->input_report,sizeof m.report));
+            }
             osg_gateway_receive_result_t r=osg_gateway_receive(&b->gateway,&m,b->now,&reply);
+            if(b->stress && m.type==OSG_GW_INPUT && r==OSG_GW_RX_ACCEPTED) {
+                STRESS_CHECK(b,before.online && before.source_node==m.source_node && before.node==m.node);
+                STRESS_CHECK(b,before.boot_session==m.boot_session && before.lease==m.lease);
+                STRESS_CHECK(b,!before.has_sequence || m.sequence>before.sequence);
+            }
             if(r==OSG_GW_RX_ASSIGNMENT) assert(osg_cyphal_send(&b->transport,&reply,b->now));
         }
     }
-    for(unsigned i=0;i<DEVICES;i++) if(i!=p->sender && !b->muted[i])
-        if(osg_can_client_receive(&b->clients[i],&p->frame,b->now)) b->completed[i]++;
+    for(unsigned i=0;i<DEVICES;i++) if(i!=p->sender && !b->muted[i]) {
+        deterministic_transport(b,&b->clients[i].cyphal);
+        uint32_t prior=b->clients[i].ack_sequence;
+        if(osg_can_client_receive(&b->clients[i],&p->frame,b->now)) {
+            if(b->stress) {
+                const osg_can_client_t *c=&b->clients[i];
+                STRESS_CHECK(b,p->has_ack && osg_gateway_identity_equal(&p->ack.identity,&c->identity));
+                STRESS_CHECK(b,c->ack_sequence>prior && c->ack_sequence==p->ack.sequence);
+                STRESS_CHECK(b,c->boot==p->ack.boot_session && c->lease==p->ack.lease && c->node==p->ack.node);
+                STRESS_CHECK(b,c->gateway_source==(p->frame.id&127U));
+                STRESS_CHECK(b,!c->direct && !memcmp(c->acknowledged,p->ack.report,sizeof c->acknowledged));
+            }
+            b->completed[i]++;
+        }
+        deterministic_transport(b,&b->clients[i].cyphal);
+    }
 }
 static void pump_multi(bus_t *b) {
     unsigned delivered=0;
@@ -77,9 +162,13 @@ static void pump_multi(bus_t *b) {
 }
 static void tick_multi(bus_t *b,uint32_t now) {
     assert(now>=b->now); b->now=now;
+    deterministic_transport(b,&b->transport);
     osg_gateway_tick(&b->gateway,now);osg_cyphal_tick(&b->transport,now);
-    for(unsigned i=0;i<DEVICES;i++) if(!b->muted[i])
+    for(unsigned i=0;i<DEVICES;i++) if(!b->muted[i]) {
+        deterministic_transport(b,&b->clients[i].cyphal);
         osg_can_client_tick(&b->clients[i],now,b->reports[i]);
+        deterministic_transport(b,&b->clients[i].cyphal);
+    }
     pump_multi(b);
 }
 static osg_gateway_module_t *module(bus_t *b,unsigned i) {
@@ -233,6 +322,182 @@ static void collision_multi(bus_t *b,bool gateway_collision) {
     puts(gateway_collision ? "PASS: gateway CAN node-ID collision; all leases revoked, stable slots, source-bound rediscovery and messaging recovery" :
                             "PASS: device CAN node-ID collision; automatic address repair, renewed leases, stale delivery rejection and isolated recovery");
 }
+/* Each seed defines a complete fault schedule; a separate PRNG drives wire
+ * impairment so event selection does not depend on how many frames are sent. */
+typedef struct {
+    osg_gateway_delivery_t delivery;
+    uint8_t packet[OSG_GW_MAX_REPORT_SIZE+1];
+    uint32_t due;
+    bool pending;
+} stress_usb_t;
+static void reboot_stress_client(bus_t *b,unsigned i,uint8_t source) {
+    osg_gateway_identity_t id=b->clients[i].identity;
+    osg_gateway_profile_t profile=b->clients[i].profile;
+    uint32_t boot=b->clients[i].boot+1;bool direct=b->clients[i].direct;
+    osg_cyphal_destroy(&b->clients[i].cyphal);
+    STRESS_CHECK(b,osg_can_client_init(&b->clients[i],&id,&profile,boot,enqueue_multi,&b->endpoints[i]));
+    STRESS_CHECK(b,canard_set_node_id(&b->clients[i].cyphal.canard,source));
+    if(direct) STRESS_CHECK(b,osg_can_client_usb(&b->clients[i],true));
+    deterministic_transport(b,&b->clients[i].cyphal);
+}
+static void reboot_stress_gateway(bus_t *b) {
+    uint8_t record[OSG_GW_REGISTRY_RECORD_SIZE];osg_gateway_registry_t restored;
+    STRESS_CHECK(b,osg_gateway_registry_encode(&b->gateway.active,record,sizeof record)==sizeof record);
+    STRESS_CHECK(b,osg_gateway_registry_decode(record,sizeof record,&restored));
+    uint32_t epoch=b->gateway.epoch+65536U;
+    osg_gateway_identity_t id=b->transport.identity;uint8_t source=osg_cyphal_node_id(&b->transport);
+    osg_cyphal_destroy(&b->transport);
+    STRESS_CHECK(b,osg_gateway_init(&b->gateway,epoch,&restored));
+    osg_gateway_set_running(&b->gateway,true);
+    STRESS_CHECK(b,osg_cyphal_init(&b->transport,&id,epoch,"org.opensimgear.gateway",enqueue_multi,&b->endpoints[GATEWAY]));
+    STRESS_CHECK(b,canard_set_node_id(&b->transport.canard,source));
+    deterministic_transport(b,&b->transport);
+}
+static void invariants_stress(bus_t *b) {
+    STRESS_CHECK(b,b->count<QUEUE);
+    for(unsigned i=0;i<DEVICES;i++) {
+        osg_gateway_module_t *m=module(b,i);
+        STRESS_CHECK(b,osg_gateway_find_slot(&b->gateway.active,&b->clients[i].identity)==(int)i);
+        STRESS_CHECK(b,osg_gateway_find_slot(&b->gateway.pending,&b->clients[i].identity)==(int)i);
+        STRESS_CHECK(b,b->clients[i].cyphal.free_count<=OSG_CYPHAL_POOL_BLOCK_COUNT);
+        STRESS_CHECK(b,b->clients[i].cyphal.canard.tx.queue_size<=OSG_CYPHAL_TX_CAPACITY);
+        if(m->online) {
+            STRESS_CHECK(b,m->node && m->lease && m->lease>b->gateway.epoch);
+            for(unsigned j=0;j<i;j++) if(module(b,j)->online) {
+                STRESS_CHECK(b,m->node!=module(b,j)->node);
+                STRESS_CHECK(b,m->source_node!=module(b,j)->source_node);
+            }
+        }
+        if(!m->online || m->direct_usb || !m->has_input) check_report(b,i,true);
+        else {
+            uint8_t report[OSG_GW_MAX_REPORT_SIZE];
+            STRESS_CHECK(b,osg_gateway_report(&b->gateway,i,report,sizeof report)==3);
+            /* High axis byte identifies the emitter independently of routing;
+             * delayed legitimate reports may contain older low-byte values. */
+            STRESS_CHECK(b,report[2]==0x40U+i);
+        }
+    }
+    STRESS_CHECK(b,b->transport.free_count<=OSG_CYPHAL_POOL_BLOCK_COUNT);
+    STRESS_CHECK(b,b->transport.canard.tx.queue_size<=OSG_CYPHAL_TX_CAPACITY);
+}
+static void usb_stress(bus_t *b,stress_usb_t usb[DEVICES],uint32_t *random) {
+    for(unsigned i=0;i<DEVICES;i++) {
+        stress_usb_t *u=&usb[i];
+        if(u->pending && u->due<=b->now) {
+            osg_gateway_message_t ack;
+            const osg_gateway_module_t *current=module(b,i);
+            bool invalid=!u->delivery.valid || !current->online || current->direct_usb || !current->has_input ||
+                u->delivery.run_generation!=b->gateway.run_generation ||
+                u->delivery.delivery_generation!=current->delivery_generation ||
+                u->delivery.boot_session!=current->boot_session || u->delivery.lease!=current->lease;
+            bool completed=osg_gateway_delivery_complete(&b->gateway,&u->delivery,u->packet,4,&ack);
+            STRESS_CHECK(b,!invalid || !completed);
+            if(completed) {
+                osg_gateway_module_t *m=module(b,i);
+                STRESS_CHECK(b,m->online && !m->direct_usb && m->has_input);
+                STRESS_CHECK(b,m->lease==u->delivery.lease && m->boot_session==u->delivery.boot_session);
+                STRESS_CHECK(b,ack.sequence==u->delivery.sequence && !memcmp(ack.report,u->packet+1,3));
+                b->emitting_ack=true;b->ack_origin=u->delivery;
+                STRESS_CHECK(b,osg_cyphal_send(&b->transport,&ack,b->now));
+                b->emitting_ack=false;
+            } else if(u->delivery.valid) b->stale_usb++;
+            u->pending=false;
+        }
+        if(!u->pending && random_next(random)%4U==0) {
+            size_t length=osg_gateway_delivery_prepare(&b->gateway,i,u->packet+1,OSG_GW_MAX_REPORT_SIZE,&u->delivery);
+            STRESS_CHECK(b,length==3);u->packet[0]=(uint8_t)(i+1);
+            u->pending=true;u->due=b->now+10U+random_next(random)%191U;
+        }
+    }
+    pump_multi(b);
+}
+static uint32_t randomized_stress(bus_t *b,uint32_t seed) {
+    ready_multi(b);
+    for(unsigned i=0;i<DEVICES;i++) b->reports[i][2]=(uint8_t)(0x40U+i);
+    tick_multi(b,20);
+    b->stress=true;b->noise=true;b->seed=seed;
+    b->noise_random=seed^UINT32_C(0xa5a5a5a5);b->trace_hash=2166136261U;
+    uint32_t random=seed;
+    stress_usb_t usb[DEVICES]={0};
+    unsigned reboots[DEVICES]={0},collisions[DEVICES]={0},ownership[DEVICES]={0},gateway_reboots=0;
+    uint32_t usb_until[DEVICES]={0};
+    unsigned order[DEVICES];for(unsigned i=0;i<DEVICES;i++) order[i]=i;
+    for(unsigned i=DEVICES-1;i>0;i--) {
+        unsigned j=random_next(&random)%(i+1),tmp=order[i];order[i]=order[j];order[j]=tmp;
+    }
+    printf("STRESS seed=0x%08x: 60 s mixed faults, 35 s bounded recovery\n",seed);fflush(stdout);
+    for(unsigned step=1;step<=6000;step++) {
+        b->now=20U+step*10U;
+        for(unsigned i=0;i<DEVICES;i++) if(usb_until[i] && usb_until[i]<=b->now) {
+            if(b->clients[i].direct) {
+                STRESS_CHECK(b,osg_can_client_usb(&b->clients[i],false));ownership[i]++;
+                trace_word(b,b->now);trace_word(b,i);trace_word(b,UINT32_MAX-1U);
+            }
+            usb_until[i]=0;
+        }
+        /* Every device gets each requested state fault in a shuffled initial
+         * sweep, followed by randomly interleaved events on arbitrary devices. */
+        if(step%100U==0) {
+            unsigned event=step/100U-1;b->event=event;
+            unsigned i=event<30U ? order[event%DEVICES] : random_next(&random)%DEVICES;
+            unsigned action=event<30U ? event/DEVICES : random_next(&random)%4U;
+            trace_word(b,event);trace_word(b,i);trace_word(b,action);
+            if(action==0) {
+                STRESS_CHECK(b,osg_can_client_usb(&b->clients[i],!b->clients[i].direct));ownership[i]++;
+                usb_until[i]=b->clients[i].direct ? b->now+250U+random_next(&random)%951U : 0;
+            } else if(action==1) {
+                reboot_stress_client(b,i,osg_cyphal_node_id(&b->clients[i].cyphal));reboots[i]++;
+            } else if(action==2) {
+                unsigned other=(i+1U+random_next(&random)%(DEVICES-1U))%DEVICES;
+                uint8_t source=event%3U==0 ? osg_cyphal_node_id(&b->transport) : osg_cyphal_node_id(&b->clients[other].cyphal);
+                reboot_stress_client(b,i,source);reboots[i]++;collisions[i]++;
+                /* Immediate Heartbeat uses real libcanard frames, with the same
+                 * loss/delay as other traffic; eventual detection is observed. */
+                osg_cyphal_tick(&b->clients[i].cyphal,b->now);
+            } else { reboot_stress_gateway(b);gateway_reboots++; }
+        }
+        for(unsigned i=0;i<DEVICES;i++) {
+            b->reports[i][0]=(uint8_t)random_next(&random);
+            b->reports[i][1]=(uint8_t)step;b->reports[i][2]=(uint8_t)(0x40U+i);
+        }
+        b->reverse=(random_next(&random)&1U)!=0;
+        tick_multi(b,b->now);usb_stress(b,usb,&random);invariants_stress(b);
+    }
+    for(unsigned i=0;i<DEVICES;i++) {
+        STRESS_CHECK(b,reboots[i]>0 && collisions[i]>0 && ownership[i]>=2);
+        STRESS_CHECK(b,b->sender_drops[i]>0 && b->sender_delays[i]>0 && b->completed[i]>0);
+    }
+    STRESS_CHECK(b,b->sender_drops[GATEWAY]>0 && b->sender_delays[GATEWAY]>0 && b->stale_usb>0);
+    STRESS_CHECK(b,gateway_reboots>0 && b->gateway_migrations>0);
+    STRESS_CHECK(b,b->drops>0 && b->delays>0 && b->reorders>0);
+    /* Stop injecting faults. Keep already delayed wire frames and pending USB
+     * completions, release ownership, then demand bounded natural recovery. */
+    b->noise=false;b->reverse=false;
+    for(unsigned i=0;i<DEVICES;i++) {
+        if(b->clients[i].direct) STRESS_CHECK(b,osg_can_client_usb(&b->clients[i],false));
+        b->reports[i][0]=(uint8_t)(i+1);b->reports[i][1]=(uint8_t)(11U*i);
+    }
+    uint32_t end=b->now+35000U;
+    while(b->now<end) { tick_multi(b,b->now+10U);usb_stress(b,usb,&random);invariants_stress(b); }
+    /* Finish with one known successful completion per slot. All emitted ACKs
+     * now arrive immediately; the local snapshots are discarded at teardown. */
+    for(unsigned i=0;i<DEVICES;i++) {
+        STRESS_CHECK(b,osg_can_client_active(&b->clients[i]));check_report(b,i,false);
+        STRESS_CHECK(b,module(b,i)->source_node==osg_cyphal_node_id(&b->clients[i].cyphal));
+        STRESS_CHECK(b,module(b,i)->boot_session==b->clients[i].boot);
+        STRESS_CHECK(b,b->clients[i].gateway_source==osg_cyphal_node_id(&b->transport));
+        for(unsigned j=0;j<i;j++) STRESS_CHECK(b,osg_cyphal_node_id(&b->clients[i].cyphal)!=osg_cyphal_node_id(&b->clients[j].cyphal));
+        STRESS_CHECK(b,osg_cyphal_node_id(&b->clients[i].cyphal)!=osg_cyphal_node_id(&b->transport));
+        b->ack_origin=pending_multi(b,i,usb[i].packet);b->emitting_ack=true;
+        unsigned before=b->completed[i];complete_multi(b,i);b->emitting_ack=false;pump_multi(b);
+        STRESS_CHECK(b,b->completed[i]==before+1 && b->clients[i].ack_sequence==module(b,i)->input_sequence);
+        trace_word(b,b->completed[i]);trace_word(b,b->clients[i].lease);trace_word(b,b->clients[i].boot);
+    }
+    uint32_t digest=b->trace_hash;
+    printf("PASS: stress seed=0x%08x trace=%08x drops=%u delays=%u reordered=%u gateway-reboots=%u migrations=%u stale-USB=%u; ten devices recovered\n",
+           seed,digest,b->drops,b->delays,b->reorders,gateway_reboots,b->gateway_migrations,b->stale_usb);
+    destroy_multi(b);return digest;
+}
 void multi_device_integration_test(void) {
     /* Static storage avoids putting eleven transport pools on the host stack. */
     static bus_t b;init_multi(&b);
@@ -342,4 +607,20 @@ void multi_device_integration_test(void) {
     usb_ownership_multi(&b);
     collision_multi(&b,false);
     collision_multi(&b,true);
+    const uint32_t seeds[]={UINT32_C(0x13579bdf),UINT32_C(0x2468ace1),UINT32_C(0xc0ffee01)};
+    const char *override=getenv("OSG_CYPHAL_STRESS_SEED");
+    uint32_t chosen=0;
+    if(override) {
+        char *end;unsigned long parsed=strtoul(override,&end,10);
+        if(!*override || *end || !parsed || parsed>UINT32_MAX) {
+            fputs("OSG_CYPHAL_STRESS_SEED must be a decimal integer in 1..4294967295\n",stderr);abort();
+        }
+        chosen=(uint32_t)parsed;
+    }
+    unsigned count=override ? 1U : (unsigned)(sizeof seeds/sizeof seeds[0]);
+    for(unsigned i=0;i<count;i++) {
+        uint32_t seed=override ? chosen : seeds[i];
+        uint32_t first=randomized_stress(&b,seed);
+        STRESS_CHECK(&b,randomized_stress(&b,seed)==first);
+    }
 }

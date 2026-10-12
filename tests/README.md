@@ -72,6 +72,37 @@ arbitration. Direct USB takeover/release checks neutral fallback, rejected old
 delivery, lost first fresh input on release and continued delivery for the other
 nine clients. These scenarios use existing contracts without creating a release.
 
+The runner also executes deterministic randomized stress for seeds `0x13579bdf`,
+`0x2468ace1` and `0xc0ffee01`. Each seed runs twice and must produce the same
+frame/event trace digest. Separate xorshift32 streams drive the event schedule
+and wire faults. The harness normalizes libcanard's initial address-mixed PRNG
+state after construction/reset so ASLR cannot alter replayed collision choices;
+the firmware and vendored transport are unchanged. Each run combines 60 seconds of simulated activity with roughly
+12% frame loss, 28% delayed frames (10–400 ms), reversed delivery order, device
+and gateway reboots, occupied CAN node IDs and temporary direct USB ownership.
+A shuffled initial sweep guarantees a reboot, collision injection and USB
+takeover/release for every device; coverage checks additionally require actual
+loss/delay and acknowledged messaging for every device, gateway reboots and
+observed gateway source migration. USB completions are delayed by 10–200 ms,
+including snapshots retained across ownership/session changes.
+
+Checks during the fault phase cover stable registry slots, unique live gateway
+routes/sources, bounded transport pools/queues, neutral unavailable/USB-owned
+slots, source/session/lease and sequence guards, identity-specific report bytes,
+and ACK provenance from an immutable successful USB completion. Invalidated USB
+snapshots must not produce ACKs. After faults stop, pending traffic remains and
+all ownership is released. Within a further 35 seconds of simulated time every
+device must recover discovery, current source/session binding, exact input
+reports and successful completion ACKs. The test uses simulated time, without
+wall-clock sleeps, and is automatically included in the existing CI runner.
+
+Failure diagnostics include seed, simulated time and event index. To replay
+one seed, append `--stress-seed 0x13579bdf` to the runner command above; it still
+runs the focused suites and repeats the selected stress seed twice. This stress
+test checks portable behavior and does not emulate CAN arbitration, STM32 HAL
+or physical USB. Its fixed corpus is bounded coverage rather than exhaustive
+fault exploration.
+
 GitHub Actions runs both integration suites with AddressSanitizer and
 UndefinedBehaviorSanitizer on pushes, pull requests and manual dispatches in
 `protocol`, `device-template` and `device-gateway` through each repository's
