@@ -1,40 +1,62 @@
 # OpenSimGear protocol
 
-Canonical, separately versioned protocol definitions shared by firmware and the desktop cockpit. Firmware consumes these definitions through firmware-common; the Rust cockpit consumes them without depending on the C firmware library.
+Shared wire contracts, reference code and conformance vectors for OpenSimGear firmware and Cockpit. The current implementation is a **private CAN FD v2 prototype** with a separate STM32 gateway CDC v2 API. Canonical Cyphal application schemas and a production protocol release remain future work.
 
-## Status
+## Implemented contracts
 
-Repository scaffold initialized. Architecture semantics are agreed, but concrete schemas, Cyphal identifiers, command names, frame limits, timeouts, and fixtures are not yet implemented or assigned. This scaffold is not a wire-compatible protocol release.
+| Contract | Consumers | Current behavior |
+| --- | --- | --- |
+| [Private CAN FD v2](reference/can-fd-v2/README.md) | STM32 device-gateway, generic Rev B module and Python peer | Identity/profile announcement, node/lease assignment, input reports, heartbeats and USB-completion acknowledgements |
+| [STM32 gateway CDC v2](serial/stm32-gateway-v2.md) | Gateway firmware and Cockpit's Rust STM32 adapter | Correlated bounded snapshots, inventory and registry staging, epoch-guarded mutation and explicit persistent Apply layout |
+
+CAN v2 supports up to ten chain-local nodes and profiles with 128 buttons, four hats and eight axes. Direct module USB has input priority. Sequence/session/lease checks reject stale delivery; gateway USB completion credits encoder pulses. Persisted gateway slots survive temporary absence and remain neutral when inputs are unavailable. These application rules are implemented by the consuming firmware, not by Cyphal.
+
+As of 2026-10-12, reference-code/fixture checks and cross-firmware integration pass, including sanitized software runs. Cockpit consumes actual C formatter fixtures. This establishes portable source interoperability; assembled STM32 USB/CAN, timing, power and flash brownout behavior remain unverified.
+
+CAN v2 rejects v1 wire peers. The gateway can migrate its older persisted v1 registry, which is distinct from wire compatibility. The Pico W simulator uses its own protocol-1 adapter and is not a CAN v1/v2 peer. Update matching STM32 module/gateway firmware together. See [compatibility](compatibility/README.md).
 
 ## Layout
 
-- [dsdl/](dsdl/README.md): OpenSimGear Cyphal application definitions.
-- [serial/](serial/README.md): USB CDC command/framing and capability schemas.
-- [compatibility/](compatibility/README.md): version rules and compatibility requirements.
-- [test-vectors/](test-vectors/README.md): shared conformance inputs and expected outputs.
+- [reference/can-fd-v2/](reference/can-fd-v2/README.md): reviewed C codec snapshot and SHA-256 manifest.
+- [serial/](serial/README.md): implemented STM32 CDC v2 API and future serial configuration/output scope.
+- [test-vectors/](test-vectors/README.md): canonical CAN frames and actual gateway formatter snapshots.
+- [tests/](tests/README.md): integration runner linking gateway, generic client and shared acquisition code.
+- `tools/verify_can_vendors.py`: checks reference/firmware codec copies and stored or freshly generated fixtures.
+- [dsdl/](dsdl/README.md): placeholder for future Cyphal DSDL definitions; no application schemas or port IDs are assigned.
+- [compatibility/](compatibility/README.md): prototype version boundaries and production release policy.
 
-## Agreed semantics
+## Verify adjacent checkouts
 
-USB serial and CAN share a versioned, bounded capability model; their wire framing may differ. The model covers stable module and gateway identities, model/hardware information, available controls/outputs, gateway inventories and attachment, configuration, health, and compatibility. Incompatible versions produce a clear diagnostic rather than silently guessing.
+From the parent workspace containing `protocol/`, `device-gateway/`, `device-template/` and `cockpit/`:
 
-Each gateway owns one CAN chain through two parallel sockets. Multiple gateways connect independently by USB; their CAN and powered chains must remain separate. Node IDs are allocated per gateway chain and may overlap across gateways. Host routes use stable gateway and module identities, resolve the current node ID, and bind requests/responses to the current connection/session to reject stale work or address reuse. Gateway discovery supplies inventory snapshots and changes with module identity, capabilities, node ID, registration, ownership, and freshness. Socket location is not discoverable on the shared bus.
+```sh
+cmake -S device-gateway/firmware -B .research/protocol-gateway-native -DCMAKE_BUILD_TYPE=Release
+cmake --build .research/protocol-gateway-native
+ctest --test-dir .research/protocol-gateway-native --output-on-failure
+python3 protocol/tools/verify_can_vendors.py --workspace . \
+  --gateway-test .research/protocol-gateway-native/osg_gateway_test
+TMPDIR="$PWD/.research" python3 protocol/tests/run_gateway_generic.py \
+  --workspace . --common-source /absolute/path/to/pinned/firmware-common --sanitize
+```
 
-Gateway controller assignments persist by stable module identity within each gateway registry. The cockpit merges direct USB/CAN sightings into one logical device and records current gateway attachment separately from the active route and last-known attachment. Duplicate identities on independent chains are diagnosed and block automatic routed writes. Moving a module between gateways preserves its identity/settings but requires explicit destination registration unless it has a compatible slot there; the old slot remains absent until explicit removal. Game binding continuity across gateway USB identities is not guaranteed.
+Supply the common checkout matching the generic firmware's full commit pin. These checks use a host compiler and existing sources; they do not fetch dependencies or flash hardware. The [integration guide](tests/README.md) documents the optional prepared-source default and test boundaries.
 
-Registration/layout changes require deliberate USB reconnect, while temporary unplugging preserves slots. Configuration permits one writer per module with explicit Apply/Save and interrupted-write protection. Output ownership uses explicit active sessions and freshness, with direct USB serial priority and fresh gateway fallback.
+## Planned production semantics
 
-## Implementation and release policy
+Runtime capabilities, module settings/calibration and output sessions need a shared bounded model, explicit compatibility rules and stable gateway/module identities. Multiple independent chains may reuse node IDs; host routes must resolve the current identity and session rather than treat node IDs as globally unique. Direct USB/CAN inventory merging, cross-chain duplicate-identity diagnostics and migration handling remain future work in Cockpit.
 
-Generate bindings where supported, otherwise validate adapters against the same test vectors. Do not assume a supported DSDL-to-Rust generator. Version protocol releases independently and publish the firmware/cockpit compatibility they actually support. Exact identifiers and timing/size limits require implementation and measurement before release.
+Configuration will allow one writer per module, separate drafts, explicit Apply/Save and interrupted-write protection. Output ownership will use active sessions and fresh commands, with direct USB priority. Firmware update/recovery behavior is not defined by the prototype contracts. Those features must not be inferred from an input heartbeat or gateway registry API.
+
+Generate bindings where supported, otherwise check adapters against shared vectors. Do not assume an available DSDL-to-Rust generator. Release protocol versions independently with tested firmware/Cockpit combinations and measured limits. No production compatibility matrix has been released.
 
 ## Related repositories
 
-- [Protocol](https://github.com/opensimgear/protocol): shared definitions and compatibility rules.
-- [Firmware common](https://github.com/opensimgear/firmware-common): reusable C implementation.
-- [Device template](https://github.com/opensimgear/device-template): new-device scaffold with planned hello-world firmware and starter KiCad board.
-- [Cockpit](https://github.com/opensimgear/cockpit): desktop configuration application.
-- [Website](https://github.com/opensimgear/opensimgear.github.io): system architecture and user documentation.
+- [Device gateway](https://github.com/opensimgear/device-gateway): gateway CAN/CDC/HID implementation and electronics.
+- [Device template](https://github.com/opensimgear/device-template): generic module and private v2 client.
+- [Firmware common](https://github.com/opensimgear/firmware-common): reusable acquisition and USB code; pinned protocol source dependency.
+- [Cockpit](https://github.com/opensimgear/cockpit): native host adapters and controller registration UI.
+- [Website](https://github.com/opensimgear/opensimgear.github.io): architecture and user documentation.
 
 ## Licensing
 
-License selection is pending. No license grant is implied by this scaffold. Firmware, mechanical design, and electronics will each need documented license coverage before releases and any public USB identifier application.
+OpenSimGear license selection remains pending; no license grant is implied for newly authored definitions or reference code. Production protocol, firmware and hardware releases require documented licensing and compatible USB identifiers.
