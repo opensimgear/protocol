@@ -21,17 +21,21 @@ static void init(osg_cyphal_t *t,queue_t *q,unsigned id,const char *name) {
     assert(canard_set_node_id(&t->canard,(uint8_t)id));
 }
 static osg_gateway_message_t message(osg_gateway_message_type_t type,unsigned identity_byte) {
-    osg_gateway_message_t m={.type=type,.node=1,.boot_session=42,.lease=9,.sequence=7,.gateway_epoch=65536};
+    osg_gateway_message_t m={.type=type,.node=1,.boot_session=42,.lease=9,.sequence=7,.gateway_epoch=65536,.configuration_generation=123456};
     m.identity=identity(identity_byte);
     m.profile=(osg_gateway_profile_t){.button_count=128,.axis_count=8,.hat_count=4,.revision=1};
     for(unsigned i=0;i<8;i++) {m.profile.axis_usage[i]=(uint8_t)(0x30+i);m.profile.axis_neutral[i]=(uint16_t)(8192*i);}
     osg_gateway_profile_neutral(&m.profile,m.report);
     if(type==OSG_GW_ANNOUNCE) m.node=0;
+    if(type==OSG_GW_CONFIG_REQUEST || type==OSG_GW_CONFIG_RESPONSE) {
+        m.config_total=49; m.config_offset=24; m.config_length=24;
+        memcpy(m.config_data,"abcdefghijklmnopqrstuvwx",24);
+    }
     return m;
 }
 static void roundtrip_test(void) {
     static osg_cyphal_t a,b;queue_t qa,qb;init(&a,&qa,1,"org.opensimgear.device");init(&b,&qb,2,"org.opensimgear.gateway");
-    for(unsigned type=1;type<=5;type++) {
+    for(unsigned type=1;type<=7;type++) {
         osg_gateway_message_t m=message((osg_gateway_message_type_t)type,1),out;
         qa.count=0;assert(osg_cyphal_send(&a,&m,type));assert(qa.count==1);
         osg_gateway_frame_t f=qa.frames[0];
@@ -39,8 +43,13 @@ static void roundtrip_test(void) {
         assert(f.deadline_valid && f.deadline_ms==type+100);
         assert(osg_cyphal_receive(&b,&f,type,&out));
         assert(out.type==m.type && out.node==m.node && out.source_node==1 && out.boot_session==42);
-        if(type==OSG_GW_ANNOUNCE) assert(osg_gateway_profile_equal(&m.profile,&out.profile));
+        if(type==OSG_GW_ANNOUNCE) assert(osg_gateway_profile_equal(&m.profile,&out.profile) && out.configuration_generation==123456);
         if(type==OSG_GW_INPUT || type==OSG_GW_INPUT_ACK) assert(!memcmp(m.report,out.report,sizeof m.report));
+        if(type==OSG_GW_CONFIG_REQUEST || type==OSG_GW_CONFIG_RESPONSE) {
+            assert(f.length==64 && out.gateway_epoch==65536 && out.sequence==7 &&
+                out.config_offset==24 && out.config_total==49 && out.config_length==24 &&
+                !memcmp(m.config_data,out.config_data,24));
+        }
         assert(!osg_cyphal_receive(&b,&f,type,&out)); /* Transfer-ID duplicate suppression. */
         f.length=9;assert(!osg_cyphal_receive(&b,&f,type,&out));
         f=qa.frames[0];f.extended=false;assert(!osg_cyphal_receive(&b,&f,type,&out));
@@ -55,6 +64,12 @@ static void roundtrip_test(void) {
     a.canard.tx.fd=false;qa.count=0;assert(osg_cyphal_send(&a,&m,11));assert(qa.count==7);
     for(size_t i=0;i<qa.count;i++) assert(osg_cyphal_receive(&b,&qa.frames[i],11,&out)==(i==qa.count-1));
     assert(!memcmp(m.report,out.report,sizeof m.report));
+    /* Full-size configuration chunks fit one FD frame; Classic fragmentation
+     * and CRC remain libcanard's responsibility. */
+    m=message(OSG_GW_CONFIG_REQUEST,1);qa.count=0;
+    assert(osg_cyphal_send(&a,&m,13) && qa.count==10);
+    for(size_t i=0;i<qa.count;i++) assert(osg_cyphal_receive(&b,&qa.frames[i],13,&out)==(i==qa.count-1));
+    assert(out.config_total==49 && !memcmp(out.config_data,m.config_data,24));
     /* A damaged multi-frame transfer is rejected by the transport CRC. */
     qa.count=0;assert(osg_cyphal_send(&a,&m,12));qa.frames[2].data[1]^=1;
     for(size_t i=0;i<qa.count;i++) assert(!osg_cyphal_receive(&b,&qa.frames[i],12,&out));
@@ -119,14 +134,14 @@ static void ten_devices_test(void) {
     osg_gateway_message_t out;
     for(unsigned node=1;node<=10;node++) {
         assert(canard_set_node_id(&sender.canard,(uint8_t)node));
-        for(unsigned type=1;type<=5;type++) {
+        for(unsigned type=1;type<=7;type++) {
             osg_gateway_message_t m=message((osg_gateway_message_type_t)type,node);qs.count=0;
             assert(osg_cyphal_send(&sender,&m,node));assert(qs.count==1);
             assert(osg_cyphal_receive(&gateway,&qs.frames[0],node,&out) && out.source_node==node);
         }
     }
-    assert(gateway.canard.err.oom==0 && gateway.free_count==OSG_CYPHAL_POOL_BLOCK_COUNT-50);
-    for(unsigned i=0;i<25;i++) osg_cyphal_tick(&gateway,31011+i);
+    assert(gateway.canard.err.oom==0 && gateway.free_count==OSG_CYPHAL_POOL_BLOCK_COUNT-70);
+    for(unsigned i=0;i<80;i++) osg_cyphal_tick(&gateway,31011+i);
     assert(gateway.free_count==OSG_CYPHAL_POOL_BLOCK_COUNT);
     osg_cyphal_destroy(&sender);osg_cyphal_destroy(&gateway);
 }

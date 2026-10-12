@@ -3,5 +3,7 @@ uint8[16] unique_id
 uint32 boot_session
 uint8 direct_usb
 Profile.1.0 profile
+# Settings activation renews the CAN lease independently of unchanged HID shape.
+uint32 configuration_generation
 @sealed
 

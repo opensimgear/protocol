@@ -1,0 +1,12 @@
+# Bounded ASCII child-command chunk. Routing fields bind every fragment to one live assignment.
+uint8 logical_node
+uint8[16] unique_id
+uint32 boot_session
+uint32 lease
+uint32 gateway_epoch
+uint32 request_id
+uint16 offset
+uint16 total
+uint8 length
+uint8[24] data
+@sealed

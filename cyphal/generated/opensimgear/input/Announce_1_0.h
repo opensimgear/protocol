@@ -71,8 +71,8 @@ extern "C" {
 /// When allocating a serialization (TX) buffer, it is safe to use the size of the largest serialized representation
 /// instead of the extent because it provides a tighter bound of the object size; it is safe because the concrete type
 /// is always known during serialization (unlike deserialization). If not sure, use extent everywhere.
-#define opensimgear_input_Announce_1_0_EXTENT_BYTES_                    50UL
-#define opensimgear_input_Announce_1_0_SERIALIZATION_BUFFER_SIZE_BYTES_ 50UL
+#define opensimgear_input_Announce_1_0_EXTENT_BYTES_                    54UL
+#define opensimgear_input_Announce_1_0_SERIALIZATION_BUFFER_SIZE_BYTES_ 54UL
 static_assert(opensimgear_input_Announce_1_0_EXTENT_BYTES_ >= opensimgear_input_Announce_1_0_SERIALIZATION_BUFFER_SIZE_BYTES_,
               "Internal constraint violation");
 
@@ -93,6 +93,9 @@ typedef struct
 
     /// opensimgear.input.Profile.1.0 profile
     opensimgear_input_Profile_1_0 profile;
+
+    /// saturated uint32 configuration_generation
+    uint32_t configuration_generation;
 } opensimgear_input_Announce_1_0;
 
 /// Serialize an instance into the provided buffer.
@@ -119,7 +122,7 @@ static inline int8_t opensimgear_input_Announce_1_0_serialize_(
         return -NUNAVUT_ERROR_INVALID_ARGUMENT;
     }
     const size_t capacity_bytes = *inout_buffer_size_bytes;
-    if ((8U * (size_t) capacity_bytes) < 400UL)
+    if ((8U * (size_t) capacity_bytes) < 432UL)
     {
         return -NUNAVUT_ERROR_SERIALIZATION_BUFFER_TOO_SMALL;
     }
@@ -172,13 +175,22 @@ static inline int8_t opensimgear_input_Announce_1_0_serialize_(
         // It is assumed that we know the exact type of the serialized entity, hence we expect the size to match.
         offset_bits += _size_bytes0_ * 8U;  // Advance by the size of the nested object.
     }
-    if (offset_bits % 8U != 0U)  // Pad to 8 bits. TODO: Eliminate redundant padding checks.
-    {
-        const uint8_t _pad1_ = (uint8_t)(8U - offset_bits % 8U);
-        const int8_t _err3_ = nunavutSetUxx(&buffer[0], capacity_bytes, offset_bits, 0U, _pad1_);  // Optimize?
+    {   // saturated uint32 configuration_generation
+        // Saturation code not emitted -- native representation matches the serialized representation.
+        const int8_t _err3_ = nunavutSetUxx(&buffer[0], capacity_bytes, offset_bits, obj->configuration_generation, 32U);
         if (_err3_ < 0)
         {
             return _err3_;
+        }
+        offset_bits += 32U;
+    }
+    if (offset_bits % 8U != 0U)  // Pad to 8 bits. TODO: Eliminate redundant padding checks.
+    {
+        const uint8_t _pad1_ = (uint8_t)(8U - offset_bits % 8U);
+        const int8_t _err4_ = nunavutSetUxx(&buffer[0], capacity_bytes, offset_bits, 0U, _pad1_);  // Optimize?
+        if (_err4_ < 0)
+        {
+            return _err4_;
         }
         offset_bits += _pad1_;
     }
@@ -250,14 +262,17 @@ static inline int8_t opensimgear_input_Announce_1_0_deserialize_(
     // opensimgear.input.Profile.1.0 profile
     {
         size_t _size_bytes1_ = (size_t)(capacity_bytes - nunavutChooseMin((offset_bits / 8U), capacity_bytes));
-        const int8_t _err4_ = opensimgear_input_Profile_1_0_deserialize_(
+        const int8_t _err5_ = opensimgear_input_Profile_1_0_deserialize_(
             &out_obj->profile, &buffer[offset_bits / 8U], &_size_bytes1_);
-        if (_err4_ < 0)
+        if (_err5_ < 0)
         {
-            return _err4_;
+            return _err5_;
         }
         offset_bits += _size_bytes1_ * 8U;  // Advance by the size of the nested serialized representation.
     }
+    // saturated uint32 configuration_generation
+    out_obj->configuration_generation = nunavutGetU32(&buffer[0], capacity_bytes, offset_bits, 32);
+    offset_bits += 32U;
     offset_bits = (offset_bits + 7U) & ~(size_t) 7U;  // Align on 8 bits.
     *inout_buffer_size_bytes = (size_t) (nunavutChooseMin(offset_bits, capacity_bits) / 8U);
     return NUNAVUT_SUCCESS;

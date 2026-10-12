@@ -1,4 +1,4 @@
-# Canonical Cyphal input definitions
+# Canonical Cyphal application definitions
 
 Application contract 3 uses the `opensimgear.input` 1.0 DSDL definitions here.
 They preserve stable 128-bit hardware identity, nonzero boot sessions and leases,
@@ -15,11 +15,13 @@ bus must reserve these IDs or change the bindings consistently before building.
 
 | Subject | DSDL type | Payload bytes | Publisher |
 | --- | --- | ---: | --- |
-| 2000 | `opensimgear.input.Announce.1.0` | 50 | Generic device |
+| 2000 | `opensimgear.input.Announce.1.0` | 54 | Generic device |
 | 2001 | `opensimgear.input.Assignment.1.0` | 29 | Gateway |
 | 2002 | `opensimgear.input.Input.1.0` | 47 | Generic device |
 | 2003 | `opensimgear.input.Status.1.0` | 30 | Generic device |
 | 2004 | `opensimgear.input.InputAck.1.0` | 47 | Gateway after USB completion |
+| 2005 | `opensimgear.input.ConfigRequest.1.0` | 62 | Gateway |
+| 2006 | `opensimgear.input.ConfigResponse.1.0` | 62 | Generic device |
 | 7509 | `uavcan.node.Heartbeat.1.0` | 7 | Every node, at least once per second |
 | Service 430 | `uavcan.node.GetInfo.1.0` | Request 0; response up to 313 | Every node responds |
 
@@ -32,6 +34,16 @@ echoes the application sequence and exact report only after successful USB inter
 completion; transport admission, CAN acknowledgement or elapsed time cannot credit
 encoder delivery. Application identity/source checks provide routing and freshness,
 not authentication against a malicious CAN participant.
+
+Announce carries the module configuration generation independently of the HID
+profile schema revision. A new active configuration renews the lease and rejects
+queued reports from the previous settings even when the HID shape is unchanged.
+Only an actual profile difference requires the gateway's explicit USB layout Apply.
+Profiles include control counts, axis usages and neutral values; a neutral change
+requires Apply even when descriptor bytes are unchanged.
+Configuration messages carry 24-byte fragments with the current identity, boot,
+route, lease, epoch and request ID. See the [runtime configuration contract](../serial/runtime-configuration.md)
+for assembly bounds, writer ownership, persistence and replay behavior.
 
 `logical_node` values 1–10 identify gateway-local routes and are independent of
 the transport's 7-bit CAN node-ID. Each chain has one physical controller shared

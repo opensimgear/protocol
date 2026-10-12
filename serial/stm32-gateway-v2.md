@@ -6,7 +6,8 @@ the `stm32_gateway` adapter only after the product/UID metadata and snapshot
 handshake agree. No public VID/PID is assigned by this contract.
 
 Transport is a newline-terminated ASCII request and a single JSON response line.
-Requests are at most 79 characters before newline. Request IDs are unsigned 32-bit
+The firmware line buffer accepts at most 479 characters before newline; the
+configuration child command is bounded to 383 characters. Request IDs are unsigned 32-bit
 decimal integers. Commands have exactly these forms:
 
 ```text
@@ -15,6 +16,7 @@ cockpit <id> <epoch> register <32-hex-module-identity>
 cockpit <id> <epoch> unregister <32-hex-module-identity>
 cockpit <id> <epoch> save
 cockpit <id> <epoch> apply
+cockpit <id> <epoch> config <32-hex-module-identity> <module-boot> <child-command>
 ```
 
 The mutation epoch must match the current snapshot. A stale epoch rejects the
@@ -31,7 +33,7 @@ Responses use this envelope (`error` is null on success):
 ```
 
 Each module supplies `identity` (32hex), `online`, `directUsb`, `node` (chain-local
-0–10), `lease`, `profile`, `pendingSlot`, `activeSlot`, `pendingProfileMatch`,
+0–10), `boot`, `sourceNode`, `configurationGeneration`, `lease`, `profile`, `pendingSlot`, `activeSlot`, `pendingProfileMatch`,
 `profileMatch`, `hasInput` and `report` (hexadecimal HID bytes). Profiles contain
 `buttons` 0–128, `axes` 0–8, `hats` 0–4, nonzero u16 `revision`, and exactly `axes`
 entries each in `axisUsage` and `neutral`. Profiles must contain at least one
@@ -64,11 +66,17 @@ Offline devices retain their occupied slot and produce neutral HID reports.
 The firmware exposes one HID interface with a report ID/top-level collection
 per slot (`reportId=activeSlot+1`). Layout changes may change host bindings. The
 native adapter reads physical inputs; simulator start/stop/input/add/presence
-and writable device settings are unsupported. Closing Cockpit closes serial
-access while physical gateway HID continues running. Setup claims in the
-desktop adapter do not imply a CAN device configuration/output session.
+are unsupported on physical STM32 gateways. Runtime settings use the module's
+exclusive writer, bounded drafts and explicit Apply/Save/Discard. The gateway
+forwards commands and replies over Cyphal with identity, boot, source, lease and
+epoch guards. Configuration replies add `targetConfig` to the JSON envelope;
+see [runtime configuration](runtime-configuration.md) for the child grammar.
+Configuration generation changes invalidate cached settings independently of the
+module boot session and HID profile revision. Legacy snapshots may omit the field.
+Closing Cockpit releases setup ownership and serial access while physical gateway
+HID continues running. A setup claim does not create an output session.
 
 This adapter currently manages one selected gateway at a time. Independent
 gateways must use electrically separate chains. Simultaneous combined gateway
-inventories, persisted device settings/calibration, outputs and firmware updates
+inventories, outputs and firmware updates
 remain outside this implementation.

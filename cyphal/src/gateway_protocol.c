@@ -5,6 +5,8 @@
 #include "opensimgear/input/Input_1_0.h"
 #include "opensimgear/input/Status_1_0.h"
 #include "opensimgear/input/InputAck_1_0.h"
+#include "opensimgear/input/ConfigRequest_1_0.h"
+#include "opensimgear/input/ConfigResponse_1_0.h"
 
 
 static void write16(uint8_t *p,uint16_t v) { p[0]=(uint8_t)v; p[1]=(uint8_t)(v>>8); }
@@ -101,6 +103,15 @@ static bool valid_message(const osg_gateway_message_t *m) {
     if(m->type==OSG_GW_ANNOUNCE) return !m->node && osg_gateway_profile_valid(&m->profile);
     if(m->node<1 || m->node>10 || !m->lease) return false;
     if(m->type==OSG_GW_ASSIGN) return !m->direct_usb && m->gateway_epoch!=0;
+    if(m->type==OSG_GW_CONFIG_REQUEST || m->type==OSG_GW_CONFIG_RESPONSE) {
+        unsigned capacity=m->type==OSG_GW_CONFIG_REQUEST ? OSG_GW_CONFIG_COMMAND_CAPACITY : OSG_GW_CONFIG_RESPONSE_CAPACITY;
+        return m->gateway_epoch && m->sequence && m->config_total && m->config_total<capacity &&
+            m->config_length && m->config_length<=OSG_GW_CONFIG_CHUNK_SIZE &&
+            m->config_offset<m->config_total && (unsigned)m->config_offset+m->config_length<=m->config_total &&
+            (m->config_offset%OSG_GW_CONFIG_CHUNK_SIZE)==0 &&
+            m->config_length==((unsigned)m->config_total-m->config_offset>OSG_GW_CONFIG_CHUNK_SIZE ?
+                OSG_GW_CONFIG_CHUNK_SIZE : m->config_total-m->config_offset);
+    }
     if(compact) return !m->direct_usb;
     return m->type==OSG_GW_HEARTBEAT;
 }
@@ -111,18 +122,32 @@ uint16_t osg_gateway_subject(osg_gateway_message_type_t type) {
     case OSG_GW_INPUT: return OSG_CYPHAL_SUBJECT_INPUT;
     case OSG_GW_HEARTBEAT: return OSG_CYPHAL_SUBJECT_STATUS;
     case OSG_GW_INPUT_ACK: return OSG_CYPHAL_SUBJECT_INPUT_ACK;
+    case OSG_GW_CONFIG_REQUEST: return OSG_CYPHAL_SUBJECT_CONFIG_REQUEST;
+    case OSG_GW_CONFIG_RESPONSE: return OSG_CYPHAL_SUBJECT_CONFIG_RESPONSE;
     default: return UINT16_MAX;
     }
 }
 size_t osg_gateway_payload_encode(const osg_gateway_message_t *m,void *buffer,size_t capacity) {
     if(!buffer || !valid_message(m)) return 0;
     size_t length=capacity;
+    if(m->type==OSG_GW_CONFIG_REQUEST || m->type==OSG_GW_CONFIG_RESPONSE) {
+#define SERIALIZE_CONFIG(TYPE) do { TYPE x={0}; x.logical_node=m->node; \
+        memcpy(x.unique_id,m->identity.bytes,sizeof x.unique_id); x.boot_session=m->boot_session; \
+        x.lease=m->lease; x.gateway_epoch=m->gateway_epoch; x.request_id=m->sequence; \
+        x.offset=m->config_offset; x._total=m->config_total; x.length=m->config_length; \
+        memcpy(x.data,m->config_data,sizeof x.data); \
+        return TYPE##_serialize_(&x,buffer,&length)>=0 ? length : 0; } while(0)
+        if(m->type==OSG_GW_CONFIG_REQUEST) SERIALIZE_CONFIG(opensimgear_input_ConfigRequest_1_0);
+        SERIALIZE_CONFIG(opensimgear_input_ConfigResponse_1_0);
+#undef SERIALIZE_CONFIG
+    }
     switch(m->type) {
     case OSG_GW_ANNOUNCE: {
         opensimgear_input_Announce_1_0 x={0};
         memcpy(x.unique_id,m->identity.bytes,sizeof x.unique_id);
         x.boot_session=m->boot_session;
         x.direct_usb=m->direct_usb;
+        x.configuration_generation=m->configuration_generation;
         x.profile.button_count=m->profile.button_count;
         x.profile.axis_count=m->profile.axis_count;
         x.profile.hat_count=m->profile.hat_count;
@@ -174,6 +199,20 @@ size_t osg_gateway_payload_encode(const osg_gateway_message_t *m,void *buffer,si
 bool osg_gateway_payload_decode(uint16_t subject,const void *buffer,size_t length,osg_gateway_message_t *out) {
     if(!buffer || !out) return false;
     osg_gateway_message_t m={0};
+    if(subject==OSG_CYPHAL_SUBJECT_CONFIG_REQUEST || subject==OSG_CYPHAL_SUBJECT_CONFIG_RESPONSE) {
+#define DESERIALIZE_CONFIG(TYPE) do { TYPE x; \
+        if(length<TYPE##_SERIALIZATION_BUFFER_SIZE_BYTES_ || TYPE##_deserialize_(&x,buffer,&length)<0) return false; \
+        m.node=x.logical_node; memcpy(m.identity.bytes,x.unique_id,sizeof x.unique_id); \
+        m.boot_session=x.boot_session; m.lease=x.lease; m.gateway_epoch=x.gateway_epoch; \
+        m.sequence=x.request_id; m.config_offset=x.offset; m.config_total=x._total; m.config_length=x.length; \
+        memcpy(m.config_data,x.data,sizeof x.data); } while(0)
+        if(subject==OSG_CYPHAL_SUBJECT_CONFIG_REQUEST) {
+            m.type=OSG_GW_CONFIG_REQUEST; DESERIALIZE_CONFIG(opensimgear_input_ConfigRequest_1_0);
+        } else { m.type=OSG_GW_CONFIG_RESPONSE; DESERIALIZE_CONFIG(opensimgear_input_ConfigResponse_1_0); }
+#undef DESERIALIZE_CONFIG
+        if(!valid_message(&m)) return false;
+        *out=m; return true;
+    }
     switch(subject) {
     case OSG_CYPHAL_SUBJECT_ANNOUNCE: {
         if(length<opensimgear_input_Announce_1_0_SERIALIZATION_BUFFER_SIZE_BYTES_) return false;
@@ -184,6 +223,7 @@ bool osg_gateway_payload_decode(uint16_t subject,const void *buffer,size_t lengt
         m.boot_session=x.boot_session;
         if(x.direct_usb>1) return false;
         m.direct_usb=x.direct_usb!=0;
+        m.configuration_generation=x.configuration_generation;
         m.profile.button_count=x.profile.button_count;
         m.profile.axis_count=x.profile.axis_count;
         m.profile.hat_count=x.profile.hat_count;

@@ -6,7 +6,7 @@
 /* One physical CAN controller, including daisy-chain sockets. The instance must never be moved while live. */
 enum { OSG_CYPHAL_POOL_BLOCK_SIZE=256, OSG_CYPHAL_POOL_BLOCK_COUNT=128,
        OSG_CYPHAL_TX_CAPACITY=16, OSG_CYPHAL_HEARTBEAT_SUBJECT=7509,
-       OSG_CYPHAL_GET_INFO_SERVICE=430, OSG_CYPHAL_SUBSCRIPTION_COUNT=6 };
+       OSG_CYPHAL_GET_INFO_SERVICE=430, OSG_CYPHAL_SUBSCRIPTION_COUNT=8 };
 typedef bool (*osg_cyphal_send_fn)(void *,const osg_gateway_frame_t *);
 typedef union { max_align_t alignment; uint8_t bytes[OSG_CYPHAL_POOL_BLOCK_SIZE]; } osg_cyphal_block_t;
 typedef struct {
@@ -17,7 +17,7 @@ typedef struct {
     osg_gateway_identity_t identity;
     uint32_t boot_session,last_ms;
     uint64_t monotonic_ms,last_heartbeat_ms;
-    uint8_t transfer_ids[6]; /* Five application subjects and the standard heartbeat. */
+    uint8_t transfer_ids[8]; /* Seven application subjects and the standard heartbeat. */
     char name[51];
     osg_cyphal_send_fn send;
     void *send_context;

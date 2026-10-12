@@ -8,8 +8,9 @@ This is work in progress ahead of going live. Existing contract identifiers desc
 
 | Contract | Consumers | Current behavior |
 | --- | --- | --- |
-| [Cyphal/CAN](cyphal/README.md) | STM32 device-gateway, generic Rev B device and native-backed Python peer | Generated identity/profile, controller lease, input and delivery-ACK transfers; node-ID autoconfiguration, heartbeat and node information |
-| [STM32 gateway CDC v2](serial/stm32-gateway-v2.md) | Gateway firmware and Cockpit's Rust STM32 adapter | Correlated bounded snapshots, inventory and registry staging, epoch-guarded mutation and explicit persistent Apply layout |
+| [Cyphal/CAN](cyphal/README.md) | STM32 device-gateway, generic Rev B device and native-backed Python peer | Generated identity/profile, controller lease, input and delivery-ACK transfers, bounded module configuration; node-ID autoconfiguration, heartbeat and node information |
+| [STM32 gateway CDC v2](serial/stm32-gateway-v2.md) | Gateway firmware and Cockpit's Rust STM32 adapter | Correlated bounded snapshots, inventory and registry staging, routed module configuration, epoch-guarded mutation and explicit persistent Apply layout |
+| [Runtime module configuration](serial/runtime-configuration.md) | Module direct USB, CAN gateway, Cockpit and native firmware emulator | Exclusive drafts, all input mappings/calibration, Apply/Save/Discard, flash recovery and generated HID descriptors |
 
 The gateway supports up to ten controller slots and profiles with 128 buttons, four hats and eight axes. These slots are independent of Cyphal node IDs. Direct device USB has input priority. Sequence/session/lease and source-node checks reject stale delivery; gateway USB completion credits encoder pulses. Persisted gateway slots survive temporary absence and remain neutral when inputs are unavailable. These application rules remain above the Cyphal transport.
 
@@ -23,7 +24,7 @@ Cyphal firmware rejects the replaced private CAN v1/v2 wire peers. Existing regi
 
 - [cyphal/](cyphal/README.md): canonical bounded transport, generated bindings and pinned libcanard source, snapshotted into each device for independent builds.
 - [reference/can-fd-v2/](reference/can-fd-v2/README.md): historical private codec snapshot and SHA-256 manifest.
-- [serial/](serial/README.md): implemented STM32 CDC v2 API and future serial configuration/output scope.
+- [serial/](serial/README.md): implemented STM32 CDC v2 and runtime configuration APIs; output/session contracts remain planned.
 - [test-vectors/](test-vectors/README.md): historical private CAN frames and current gateway formatter snapshots.
 - [tests/](tests/README.md): integration runner linking gateway, generic client and shared acquisition code.
 - `tools/verify_can_vendors.py`: checks canonical transport snapshots and stored or freshly generated CDC fixtures.
@@ -48,9 +49,9 @@ Supply the common checkout matching the generic firmware's full commit pin. Thes
 
 ## Planned production semantics
 
-Runtime capabilities, module settings/calibration and output sessions need a shared bounded model, explicit compatibility rules and stable gateway/module identities. Multiple independent chains may reuse node IDs; host routes must resolve the current identity and session rather than treat node IDs as globally unique. Direct USB/CAN inventory merging, cross-chain duplicate-identity diagnostics and migration handling remain future work in Cockpit.
+Module settings/calibration now use a shared bounded runtime model and stable gateway/module identities. Multiple independent chains may reuse node IDs; host routes must resolve the current identity and session rather than treat node IDs as globally unique. Direct USB/CAN inventory merging, cross-chain duplicate-identity diagnostics and migration handling remain future work in Cockpit.
 
-Configuration will allow one writer per module, separate drafts, explicit Apply/Save and interrupted-write protection. Output ownership will use active sessions and fresh commands, with direct USB priority. Firmware update/recovery behavior is not defined by the prototype contracts. Those features must not be inferred from an input heartbeat or gateway registry API.
+Configuration allows one writer per module, separate drafts, explicit Apply/Save and interrupted-write protection. The native emulator verifies this flow through Cockpit's actual Rust adapter and production C handlers. Output ownership will use active sessions and fresh commands, with direct USB priority. Firmware update/recovery behavior is not defined by the prototype contracts. Those features must not be inferred from an input heartbeat or gateway registry API.
 
 Generate bindings where supported, otherwise check adapters against shared vectors. Do not assume an available DSDL-to-Rust generator. Keep these contracts as work in progress until going live; production compatibility will require tested firmware/Cockpit combinations and measured limits. No production compatibility matrix has been released.
 
@@ -59,7 +60,7 @@ Generate bindings where supported, otherwise check adapters against shared vecto
 - [Device gateway](https://github.com/opensimgear/device-gateway): gateway CAN/CDC/HID implementation and electronics.
 - [Device template](https://github.com/opensimgear/device-template): generic Cyphal device with direct USB input ownership.
 - [Firmware common](https://github.com/opensimgear/firmware-common): reusable acquisition and USB code; pinned protocol source dependency.
-- [Cockpit](https://github.com/opensimgear/cockpit): native host adapters and controller registration UI.
+- [Cockpit](https://github.com/opensimgear/cockpit): native host adapters, controller registration and module configuration/calibration UI.
 - [Website](https://github.com/opensimgear/opensimgear.github.io): architecture and user documentation.
 
 ## Licensing

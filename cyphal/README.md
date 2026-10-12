@@ -14,7 +14,7 @@ requires a fresh application announcement/lease before accepting input from the 
 source. The gateway's logical node values 1–10 remain chain-local application routes.
 
 Outgoing application messages use the 13-bit subject-ID transport supported by Cyphal
-1.0 and 1.1. The deployment bindings are 2000–2004 as listed in the canonical
+1.0 and 1.1. The deployment bindings are 2000–2006 as listed in the canonical
 protocol checkout's `dsdl/README.md`. Firmware snapshots include the generated
 bindings; source DSDL and regeneration are maintained in the protocol checkout.
 Each application payload fits in one CAN FD frame, including at the maximum HID shape.
@@ -34,7 +34,7 @@ driver must discard an expired software-queued frame before handing it to the CA
 controller, including across the uint32 millisecond wrap. These fields are not wire data.
 Memory pressure/expiration appears as advisory Heartbeat health. RX sessions are
 reclaimed incrementally by libcanard polling after their timeout; ten sources on all
-five application subjects consume 50 blocks and are covered by the portable tests.
+seven application subjects consume 70 blocks and are covered by the portable tests.
 
 Call `tick` every main-loop iteration and whenever the driver can accept more frames.
 All receive/send/tick operations must share one serialized execution context.

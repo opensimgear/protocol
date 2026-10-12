@@ -75,17 +75,17 @@ static bool start(osg_cyphal_t *t) {
     canard_mem_set_t set={.tx_transfer=memory,.tx_frame=memory,.rx_session=memory,.rx_payload=memory,.rx_filters=memory};
     if(!canard_new(&t->canard,&transport_vtable,set,1,OSG_CYPHAL_TX_CAPACITY,seed(t),0)) return false;
     t->canard.user_context=t;
-    for(unsigned i=0;i<5;i++) {
+    for(unsigned i=0;i<7;i++) {
         /* Extent of 63 permits FD padding. Payload adapters require the complete known fixed-size fields. */
         if(canard_subscribe_13b(&t->canard,&t->subscriptions[i],(uint16_t)(OSG_CYPHAL_SUBJECT_ANNOUNCE+i),
                                63,CANARD_DEFAULT_TRANSFER_ID_TIMEOUT_us,&subscription_vtable)!=&t->subscriptions[i])
             return false;
         t->subscriptions[i].user_context=t;
     }
-    if(canard_subscribe_request(&t->canard,&t->subscriptions[5],OSG_CYPHAL_GET_INFO_SERVICE,0,
-                               CANARD_DEFAULT_TRANSFER_ID_TIMEOUT_us,&subscription_vtable)!=&t->subscriptions[5])
+    if(canard_subscribe_request(&t->canard,&t->subscriptions[7],OSG_CYPHAL_GET_INFO_SERVICE,0,
+                               CANARD_DEFAULT_TRANSFER_ID_TIMEOUT_us,&subscription_vtable)!=&t->subscriptions[7])
         return false;
-    t->subscriptions[5].user_context=t;
+    t->subscriptions[7].user_context=t;
     t->initialized=true;
     return true;
 }
@@ -175,8 +175,8 @@ void osg_cyphal_tick(osg_cyphal_t *t,uint32_t now_ms) {
            t->canard.tx.queue_size<OSG_CYPHAL_TX_CAPACITY) {
             canard_bytes_chain_t payload={.bytes={.data=buffer,.size=length},.next=NULL};
             if(canard_publish_13b(&t->canard,current_time(&t->canard)+1000000,1,canard_prio_nominal,
-                                 OSG_CYPHAL_HEARTBEAT_SUBJECT,t->transfer_ids[5],payload,NULL)) {
-                t->transfer_ids[5]=(uint8_t)((t->transfer_ids[5]+1)&CANARD_TRANSFER_ID_MAX);
+                                 OSG_CYPHAL_HEARTBEAT_SUBJECT,t->transfer_ids[7],payload,NULL)) {
+                t->transfer_ids[7]=(uint8_t)((t->transfer_ids[7]+1)&CANARD_TRANSFER_ID_MAX);
                 t->heartbeat_sent=true;t->last_heartbeat_ms=t->monotonic_ms;
             }
         }
