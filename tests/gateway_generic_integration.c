@@ -26,7 +26,7 @@ typedef struct {
     osg_gateway_frame_t queued[128],last_input,last_ack;
     osg_gateway_message_t last_input_message;
     bool from_gateway[128];
-    unsigned queue_count,announces,assignments,inputs,completion_acks;
+    unsigned queue_count,announces,assignments,inputs,statuses,completion_acks;
 } fixture_t;
 
 static bool enqueue(void *context,const osg_gateway_frame_t *frame) {
@@ -74,13 +74,20 @@ static void pump(fixture_t *f,uint32_t now) {
             osg_cyphal_tick(&f->gateway_transport,now);
             f->assignments++;
         } else {
-            assert(decoded.type==OSG_GW_INPUT);
+            assert(decoded.type==OSG_GW_INPUT || decoded.type==OSG_GW_HEARTBEAT);
             int module=osg_gateway_find_module(&f->gateway,&f->client.identity);
             if(module>=0 && decoded.lease!=f->gateway.modules[module].lease) {
-                assert(result==OSG_GW_RX_REJECTED); /* Old input can already be in flight at publication. */
+                assert(result==OSG_GW_RX_REJECTED); /* Old input or Status can be in flight at publication. */
                 continue;
             }
             assert(result==OSG_GW_RX_ACCEPTED);
+            if(decoded.type==OSG_GW_HEARTBEAT) {
+                /* Status proves the current lease without entering the HID
+                 * delivery or completion-ACK history. */
+                assert(module>=0 && f->gateway.modules[module].has_sequence);
+                f->statuses++;
+                continue;
+            }
             f->last_input=f->queued[i];
             f->last_input_message=decoded;
             f->inputs++;
@@ -367,7 +374,7 @@ void multi_device_integration_test(void);
 int main(void) {
     fixture_t f;init(&f);enroll_maximum_profile(&f);
     encoder_completion_test(&f);ownership_and_stale_lease_test(&f);offline_registry_test(&f);
-    assert(f.announces>=4 && f.assignments==f.announces && f.inputs>=6 && f.completion_acks==4);
+    assert(f.announces>=4 && f.assignments==f.announces && f.inputs>=6 && f.statuses>0 && f.completion_acks==4);
     puts("PASS: real generic acquisition -> CAN discovery/assignment -> persistent registry -> gateway HID completion ACK -> encoder delivery; ownership, lease and offline guards");
     osg_cyphal_destroy(&f.client.cyphal);
     osg_cyphal_destroy(&f.gateway_transport);
