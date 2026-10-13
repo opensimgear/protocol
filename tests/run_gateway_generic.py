@@ -47,6 +47,7 @@ def main() -> None:
         Path(__file__).resolve().with_name("gateway_generic_integration.c"),
         Path(__file__).resolve().with_name("multi_device_integration.c"),
         gateway / "src/gateway.c",
+        gateway / "src/gateway_layout.c",
         cyphal / "src/gateway_protocol.c",
         cyphal / "src/cyphal.c",
         cyphal / "vendor/libcanard/canard.c",

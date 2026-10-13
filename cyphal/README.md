@@ -11,7 +11,7 @@ selects a CAN node-ID using an identity/session seed and repairs observed collis
 Drivers must receive extended data frames broadly enough for occupancy tracking;
 they must not feed the node its own transmit loopback frames. Cyphal node-ID migration
 requires a fresh application announcement/lease before accepting input from the new
-source. The gateway's logical node values 1–10 remain chain-local application routes.
+source. The gateway's logical node values 1–32 remain chain-local application routes.
 
 Outgoing application messages use the 13-bit subject-ID transport supported by Cyphal
 1.0 and 1.1. The deployment bindings are 2000–2006 as listed in the canonical
@@ -35,6 +35,10 @@ controller, including across the uint32 millisecond wrap. These fields are not w
 Memory pressure/expiration appears as advisory Heartbeat health. RX sessions are
 reclaimed incrementally by libcanard polling after their timeout; ten sources on all
 seven application subjects consume 70 blocks and are covered by the portable tests.
+The expanded route test covers 32 sources concurrently publishing Announce, Input
+and Status. The pool is still bounded: simultaneous configuration/session traffic
+can create additional pressure, so 32 routes is a software capacity rather than
+a measured aggregate throughput guarantee.
 
 Call `tick` every main-loop iteration and whenever the driver can accept more frames.
 All receive/send/tick operations must share one serialized execution context.
@@ -68,5 +72,6 @@ ctest --test-dir .research/cyphal-build --output-on-failure
 Tests cover generated payloads and real libcanard FD/Classic traffic, malformed
 frames, duplicates and CRC, standard Heartbeat/multi-frame GetInfo, queue limits,
 allocation failure, reset, automatic collision repair, clock snapshots/wrap and ten
-remote nodes. Hardware interoperability, bus timing and USB delivery still require
+remote nodes on all subjects, plus 32 concurrent input/presence routes and route
+bound rejection. Hardware interoperability, bus timing and USB delivery still require
 board testing.

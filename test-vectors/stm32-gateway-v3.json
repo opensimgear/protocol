@@ -1,0 +1,735 @@
+{
+  "enrolled_pending": {
+    "id": 1,
+    "ok": true,
+    "error": null,
+    "state": {
+      "gatewayType": "stm32-can-gateway",
+      "protocol": 3,
+      "canProtocol": 3,
+      "firmware": "0.4.0",
+      "identity": "0123456789abcdef01234567",
+      "epoch": 65536,
+      "running": false,
+      "lifecycle": "automatic",
+      "layoutPending": true,
+      "layoutError": null,
+      "maxModules": 32,
+      "maxRemembered": 32,
+      "maxControllers": 32,
+      "activeGeneration": 0,
+      "pendingGeneration": 1,
+      "rejectedAnnouncements": 0,
+      "lastRejectedIdentity": null,
+      "admissionError": null,
+      "admissionFailure": null,
+      "modules": [
+        {
+          "identity": "00000000000000000000000000000001",
+          "online": true,
+          "directUsb": false,
+          "node": 1,
+          "sourceNode": 21,
+          "boot": 100,
+          "configurationGeneration": 1,
+          "lease": 65537,
+          "profile": {
+            "buttons": 128,
+            "axes": 8,
+            "hats": 4,
+            "revision": 1,
+            "axisUsage": [
+              48,
+              49,
+              50,
+              51,
+              52,
+              53,
+              54,
+              55
+            ],
+            "neutral": [
+              0,
+              9000,
+              18000,
+              27000,
+              36000,
+              45000,
+              54000,
+              63000
+            ]
+          },
+          "enabled": true,
+          "published": false,
+          "descriptorIndex": -1,
+          "reportId": null,
+          "profileMatch": false,
+          "hasInput": false,
+          "report": "0000000000000000000000000000000088880000282350467869a08cc8aff0d218f6"
+        }
+      ]
+    }
+  },
+  "pending_profile": {
+    "id": 2,
+    "ok": true,
+    "error": null,
+    "state": {
+      "gatewayType": "stm32-can-gateway",
+      "protocol": 3,
+      "canProtocol": 3,
+      "firmware": "0.4.0",
+      "identity": "0123456789abcdef01234567",
+      "epoch": 65536,
+      "running": false,
+      "lifecycle": "automatic",
+      "layoutPending": true,
+      "layoutError": null,
+      "maxModules": 32,
+      "maxRemembered": 32,
+      "maxControllers": 32,
+      "activeGeneration": 0,
+      "pendingGeneration": 1,
+      "rejectedAnnouncements": 0,
+      "lastRejectedIdentity": null,
+      "admissionError": null,
+      "admissionFailure": null,
+      "modules": [
+        {
+          "identity": "00000000000000000000000000000001",
+          "online": true,
+          "directUsb": false,
+          "node": 1,
+          "sourceNode": 21,
+          "boot": 100,
+          "configurationGeneration": 1,
+          "lease": 65537,
+          "profile": {
+            "buttons": 128,
+            "axes": 8,
+            "hats": 4,
+            "revision": 1,
+            "axisUsage": [
+              48,
+              49,
+              50,
+              51,
+              52,
+              53,
+              54,
+              55
+            ],
+            "neutral": [
+              0,
+              9000,
+              18000,
+              27000,
+              36000,
+              45000,
+              54000,
+              63000
+            ]
+          },
+          "enabled": true,
+          "published": false,
+          "descriptorIndex": -1,
+          "reportId": null,
+          "profileMatch": false,
+          "hasInput": false,
+          "report": "0000000000000000000000000000000088880000282350467869a08cc8aff0d218f6"
+        }
+      ]
+    }
+  },
+  "active_report": {
+    "id": 3,
+    "ok": true,
+    "error": null,
+    "state": {
+      "gatewayType": "stm32-can-gateway",
+      "protocol": 3,
+      "canProtocol": 3,
+      "firmware": "0.4.0",
+      "identity": "0123456789abcdef01234567",
+      "epoch": 65536,
+      "running": true,
+      "lifecycle": "automatic",
+      "layoutPending": false,
+      "layoutError": null,
+      "maxModules": 32,
+      "maxRemembered": 32,
+      "maxControllers": 32,
+      "activeGeneration": 1,
+      "pendingGeneration": 1,
+      "rejectedAnnouncements": 0,
+      "lastRejectedIdentity": null,
+      "admissionError": null,
+      "admissionFailure": null,
+      "modules": [
+        {
+          "identity": "00000000000000000000000000000001",
+          "online": true,
+          "directUsb": false,
+          "node": 1,
+          "sourceNode": 21,
+          "boot": 100,
+          "configurationGeneration": 1,
+          "lease": 65538,
+          "profile": {
+            "buttons": 128,
+            "axes": 8,
+            "hats": 4,
+            "revision": 1,
+            "axisUsage": [
+              48,
+              49,
+              50,
+              51,
+              52,
+              53,
+              54,
+              55
+            ],
+            "neutral": [
+              0,
+              9000,
+              18000,
+              27000,
+              36000,
+              45000,
+              54000,
+              63000
+            ]
+          },
+          "enabled": true,
+          "published": true,
+          "descriptorIndex": 0,
+          "reportId": 1,
+          "profileMatch": true,
+          "hasInput": true,
+          "report": "0102030405060708090a0b0c0d0e0f107088131415161718191a1b1c1d1e1f202122"
+        }
+      ]
+    }
+  },
+  "staged_disabled": {
+    "id": 11,
+    "ok": true,
+    "error": null,
+    "state": {
+      "gatewayType": "stm32-can-gateway",
+      "protocol": 3,
+      "canProtocol": 3,
+      "firmware": "0.4.0",
+      "identity": "0123456789abcdef01234567",
+      "epoch": 65536,
+      "running": true,
+      "lifecycle": "automatic",
+      "layoutPending": true,
+      "layoutError": null,
+      "maxModules": 32,
+      "maxRemembered": 32,
+      "maxControllers": 32,
+      "activeGeneration": 1,
+      "pendingGeneration": 2,
+      "rejectedAnnouncements": 0,
+      "lastRejectedIdentity": null,
+      "admissionError": null,
+      "admissionFailure": null,
+      "modules": [
+        {
+          "identity": "00000000000000000000000000000001",
+          "online": true,
+          "directUsb": false,
+          "node": 1,
+          "sourceNode": 21,
+          "boot": 100,
+          "configurationGeneration": 1,
+          "lease": 65538,
+          "profile": {
+            "buttons": 128,
+            "axes": 8,
+            "hats": 4,
+            "revision": 1,
+            "axisUsage": [
+              48,
+              49,
+              50,
+              51,
+              52,
+              53,
+              54,
+              55
+            ],
+            "neutral": [
+              0,
+              9000,
+              18000,
+              27000,
+              36000,
+              45000,
+              54000,
+              63000
+            ]
+          },
+          "enabled": false,
+          "published": true,
+          "descriptorIndex": 0,
+          "reportId": 1,
+          "profileMatch": true,
+          "hasInput": true,
+          "report": "0000000000000000000000000000000088880000282350467869a08cc8aff0d218f6"
+        }
+      ]
+    }
+  },
+  "direct_usb": {
+    "id": 4,
+    "ok": true,
+    "error": null,
+    "state": {
+      "gatewayType": "stm32-can-gateway",
+      "protocol": 3,
+      "canProtocol": 3,
+      "firmware": "0.4.0",
+      "identity": "0123456789abcdef01234567",
+      "epoch": 65536,
+      "running": true,
+      "lifecycle": "automatic",
+      "layoutPending": false,
+      "layoutError": null,
+      "maxModules": 32,
+      "maxRemembered": 32,
+      "maxControllers": 32,
+      "activeGeneration": 1,
+      "pendingGeneration": 3,
+      "rejectedAnnouncements": 0,
+      "lastRejectedIdentity": null,
+      "admissionError": null,
+      "admissionFailure": null,
+      "modules": [
+        {
+          "identity": "00000000000000000000000000000001",
+          "online": true,
+          "directUsb": true,
+          "node": 1,
+          "sourceNode": 21,
+          "boot": 100,
+          "configurationGeneration": 1,
+          "lease": 65538,
+          "profile": {
+            "buttons": 128,
+            "axes": 8,
+            "hats": 4,
+            "revision": 1,
+            "axisUsage": [
+              48,
+              49,
+              50,
+              51,
+              52,
+              53,
+              54,
+              55
+            ],
+            "neutral": [
+              0,
+              9000,
+              18000,
+              27000,
+              36000,
+              45000,
+              54000,
+              63000
+            ]
+          },
+          "enabled": true,
+          "published": true,
+          "descriptorIndex": 0,
+          "reportId": 1,
+          "profileMatch": true,
+          "hasInput": false,
+          "report": "0000000000000000000000000000000088880000282350467869a08cc8aff0d218f6"
+        }
+      ]
+    }
+  },
+  "offline": {
+    "id": 5,
+    "ok": true,
+    "error": null,
+    "state": {
+      "gatewayType": "stm32-can-gateway",
+      "protocol": 3,
+      "canProtocol": 3,
+      "firmware": "0.4.0",
+      "identity": "0123456789abcdef01234567",
+      "epoch": 65536,
+      "running": true,
+      "lifecycle": "automatic",
+      "layoutPending": false,
+      "layoutError": null,
+      "maxModules": 32,
+      "maxRemembered": 32,
+      "maxControllers": 32,
+      "activeGeneration": 1,
+      "pendingGeneration": 3,
+      "rejectedAnnouncements": 0,
+      "lastRejectedIdentity": null,
+      "admissionError": null,
+      "admissionFailure": null,
+      "modules": [
+        {
+          "identity": "00000000000000000000000000000001",
+          "online": false,
+          "directUsb": true,
+          "node": 0,
+          "sourceNode": 21,
+          "boot": 100,
+          "configurationGeneration": 1,
+          "lease": 0,
+          "profile": {
+            "buttons": 128,
+            "axes": 8,
+            "hats": 4,
+            "revision": 1,
+            "axisUsage": [
+              48,
+              49,
+              50,
+              51,
+              52,
+              53,
+              54,
+              55
+            ],
+            "neutral": [
+              0,
+              9000,
+              18000,
+              27000,
+              36000,
+              45000,
+              54000,
+              63000
+            ]
+          },
+          "enabled": true,
+          "published": true,
+          "descriptorIndex": 0,
+          "reportId": 1,
+          "profileMatch": true,
+          "hasInput": false,
+          "report": "0000000000000000000000000000000088880000282350467869a08cc8aff0d218f6"
+        }
+      ]
+    }
+  },
+  "stale_epoch": {
+    "id": 6,
+    "ok": false,
+    "error": "stale_epoch",
+    "state": {
+      "gatewayType": "stm32-can-gateway",
+      "protocol": 3,
+      "canProtocol": 3,
+      "firmware": "0.4.0",
+      "identity": "0123456789abcdef01234567",
+      "epoch": 65536,
+      "running": true,
+      "lifecycle": "automatic",
+      "layoutPending": false,
+      "layoutError": null,
+      "maxModules": 32,
+      "maxRemembered": 32,
+      "maxControllers": 32,
+      "activeGeneration": 1,
+      "pendingGeneration": 3,
+      "rejectedAnnouncements": 0,
+      "lastRejectedIdentity": null,
+      "admissionError": null,
+      "admissionFailure": null,
+      "modules": [
+        {
+          "identity": "00000000000000000000000000000001",
+          "online": false,
+          "directUsb": true,
+          "node": 0,
+          "sourceNode": 21,
+          "boot": 100,
+          "configurationGeneration": 1,
+          "lease": 0,
+          "profile": {
+            "buttons": 128,
+            "axes": 8,
+            "hats": 4,
+            "revision": 1,
+            "axisUsage": [
+              48,
+              49,
+              50,
+              51,
+              52,
+              53,
+              54,
+              55
+            ],
+            "neutral": [
+              0,
+              9000,
+              18000,
+              27000,
+              36000,
+              45000,
+              54000,
+              63000
+            ]
+          },
+          "enabled": true,
+          "published": true,
+          "descriptorIndex": 0,
+          "reportId": 1,
+          "profileMatch": true,
+          "hasInput": false,
+          "report": "0000000000000000000000000000000088880000282350467869a08cc8aff0d218f6"
+        }
+      ]
+    }
+  },
+  "profile_changed": {
+    "id": 7,
+    "ok": true,
+    "error": null,
+    "state": {
+      "gatewayType": "stm32-can-gateway",
+      "protocol": 3,
+      "canProtocol": 3,
+      "firmware": "0.4.0",
+      "identity": "0123456789abcdef01234567",
+      "epoch": 65536,
+      "running": true,
+      "lifecycle": "automatic",
+      "layoutPending": false,
+      "layoutError": null,
+      "maxModules": 32,
+      "maxRemembered": 32,
+      "maxControllers": 32,
+      "activeGeneration": 1,
+      "pendingGeneration": 3,
+      "rejectedAnnouncements": 0,
+      "lastRejectedIdentity": null,
+      "admissionError": null,
+      "admissionFailure": null,
+      "modules": [
+        {
+          "identity": "00000000000000000000000000000001",
+          "online": true,
+          "directUsb": false,
+          "node": 1,
+          "sourceNode": 21,
+          "boot": 100,
+          "configurationGeneration": 1,
+          "lease": 65539,
+          "profile": {
+            "buttons": 3,
+            "axes": 2,
+            "hats": 3,
+            "revision": 2,
+            "axisUsage": [
+              48,
+              49
+            ],
+            "neutral": [
+              0,
+              32768
+            ]
+          },
+          "enabled": true,
+          "published": true,
+          "descriptorIndex": 0,
+          "reportId": 1,
+          "profileMatch": false,
+          "hasInput": false,
+          "report": "00880800000080"
+        }
+      ]
+    }
+  },
+  "profile_updated_pending": {
+    "id": 8,
+    "ok": true,
+    "error": null,
+    "state": {
+      "gatewayType": "stm32-can-gateway",
+      "protocol": 3,
+      "canProtocol": 3,
+      "firmware": "0.4.0",
+      "identity": "0123456789abcdef01234567",
+      "epoch": 65536,
+      "running": true,
+      "lifecycle": "automatic",
+      "layoutPending": true,
+      "layoutError": null,
+      "maxModules": 32,
+      "maxRemembered": 32,
+      "maxControllers": 32,
+      "activeGeneration": 1,
+      "pendingGeneration": 4,
+      "rejectedAnnouncements": 0,
+      "lastRejectedIdentity": null,
+      "admissionError": null,
+      "admissionFailure": null,
+      "modules": [
+        {
+          "identity": "00000000000000000000000000000001",
+          "online": true,
+          "directUsb": false,
+          "node": 1,
+          "sourceNode": 21,
+          "boot": 100,
+          "configurationGeneration": 1,
+          "lease": 65539,
+          "profile": {
+            "buttons": 3,
+            "axes": 2,
+            "hats": 3,
+            "revision": 2,
+            "axisUsage": [
+              48,
+              49
+            ],
+            "neutral": [
+              0,
+              32768
+            ]
+          },
+          "enabled": true,
+          "published": true,
+          "descriptorIndex": 0,
+          "reportId": 1,
+          "profileMatch": false,
+          "hasInput": false,
+          "report": "00880800000080"
+        }
+      ]
+    }
+  },
+  "disabled": {
+    "id": 9,
+    "ok": true,
+    "error": null,
+    "state": {
+      "gatewayType": "stm32-can-gateway",
+      "protocol": 3,
+      "canProtocol": 3,
+      "firmware": "0.4.0",
+      "identity": "0123456789abcdef01234567",
+      "epoch": 65536,
+      "running": false,
+      "lifecycle": "automatic",
+      "layoutPending": false,
+      "layoutError": null,
+      "maxModules": 32,
+      "maxRemembered": 32,
+      "maxControllers": 32,
+      "activeGeneration": 5,
+      "pendingGeneration": 5,
+      "rejectedAnnouncements": 0,
+      "lastRejectedIdentity": null,
+      "admissionError": null,
+      "admissionFailure": null,
+      "modules": [
+        {
+          "identity": "00000000000000000000000000000001",
+          "online": true,
+          "directUsb": false,
+          "node": 1,
+          "sourceNode": 21,
+          "boot": 100,
+          "configurationGeneration": 1,
+          "lease": 65540,
+          "profile": {
+            "buttons": 3,
+            "axes": 2,
+            "hats": 3,
+            "revision": 2,
+            "axisUsage": [
+              48,
+              49
+            ],
+            "neutral": [
+              0,
+              32768
+            ]
+          },
+          "enabled": false,
+          "published": false,
+          "descriptorIndex": -1,
+          "reportId": null,
+          "profileMatch": false,
+          "hasInput": false,
+          "report": "00880800000080"
+        }
+      ]
+    }
+  },
+  "enable_pending": {
+    "id": 10,
+    "ok": true,
+    "error": null,
+    "state": {
+      "gatewayType": "stm32-can-gateway",
+      "protocol": 3,
+      "canProtocol": 3,
+      "firmware": "0.4.0",
+      "identity": "0123456789abcdef01234567",
+      "epoch": 65536,
+      "running": false,
+      "lifecycle": "automatic",
+      "layoutPending": true,
+      "layoutError": null,
+      "maxModules": 32,
+      "maxRemembered": 32,
+      "maxControllers": 32,
+      "activeGeneration": 5,
+      "pendingGeneration": 6,
+      "rejectedAnnouncements": 0,
+      "lastRejectedIdentity": null,
+      "admissionError": null,
+      "admissionFailure": null,
+      "modules": [
+        {
+          "identity": "00000000000000000000000000000001",
+          "online": true,
+          "directUsb": false,
+          "node": 1,
+          "sourceNode": 21,
+          "boot": 100,
+          "configurationGeneration": 1,
+          "lease": 65540,
+          "profile": {
+            "buttons": 3,
+            "axes": 2,
+            "hats": 3,
+            "revision": 2,
+            "axisUsage": [
+              48,
+              49
+            ],
+            "neutral": [
+              0,
+              32768
+            ]
+          },
+          "enabled": true,
+          "published": false,
+          "descriptorIndex": -1,
+          "reportId": null,
+          "profileMatch": false,
+          "hasInput": false,
+          "report": "00880800000080"
+        }
+      ]
+    }
+  }
+}

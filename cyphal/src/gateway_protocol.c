@@ -101,7 +101,7 @@ static bool valid_message(const osg_gateway_message_t *m) {
     bool compact=m->type==OSG_GW_INPUT || m->type==OSG_GW_INPUT_ACK;
     if(!compact && !osg_gateway_identity_valid(&m->identity)) return false;
     if(m->type==OSG_GW_ANNOUNCE) return !m->node && osg_gateway_profile_valid(&m->profile);
-    if(m->node<1 || m->node>10 || !m->lease) return false;
+    if(m->node<1 || m->node>OSG_GW_MAX_MODULES || !m->lease) return false;
     if(m->type==OSG_GW_ASSIGN) return !m->direct_usb && m->gateway_epoch!=0;
     if(m->type==OSG_GW_CONFIG_REQUEST || m->type==OSG_GW_CONFIG_RESPONSE) {
         unsigned capacity=m->type==OSG_GW_CONFIG_REQUEST ? OSG_GW_CONFIG_COMMAND_CAPACITY : OSG_GW_CONFIG_RESPONSE_CAPACITY;

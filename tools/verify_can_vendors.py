@@ -38,13 +38,14 @@ def main():
     if args.workspace:
         copies = [
             ('stm32-gateway-v2.json', args.workspace / 'cockpit/src-tauri/tests/fixtures/stm32-gateway-v2.json'),
+            ('stm32-gateway-v3.json', args.workspace / 'cockpit/src-tauri/tests/fixtures/stm32-gateway-v3.json'),
         ]
         for name, path in copies:
             if json.loads(path.read_text()) != json.loads((fixtures / name).read_text()):
                 raise SystemExit(f'Conformance fixture differs from canonical snapshot: {path}')
-        print('Cockpit CDC fixture matches canonical snapshot')
+        print('Cockpit current and legacy CDC fixtures match canonical snapshots')
     if args.gateway_test:
-        for name, option in [('stm32-gateway-v2.json', '--cockpit-vectors')]:
+        for name, option in [('stm32-gateway-v3.json', '--cockpit-vectors')]:
             fresh = json.loads(subprocess.check_output([str(args.gateway_test), option]))
             if fresh != json.loads((fixtures / name).read_text()):
                 raise SystemExit(f'Fresh gateway C output differs from canonical fixture: {name}')

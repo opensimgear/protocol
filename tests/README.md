@@ -1,6 +1,6 @@
 # Local cross-firmware integration
 
-The optional runner builds the actual gateway core/registry, generated Cyphal
+The optional runner builds the actual gateway core/registry/layout worker, generated Cyphal
 payloads, libcanard transport and generic CAN client/delivery with a local pinned
 firmware-common input implementation.
 It requires adjacent `device-gateway/` and `device-template/` checkouts, the pinned common source and a host C compiler. It never
@@ -25,15 +25,23 @@ remote commit is required.
 
 The test drives real debounced contacts, eight ADC axes, four hats and a
 quadrature encoder with 128 logical buttons. Two actual Cyphal instances exchange
-CAN frames through discovery/assignment, registry serialization, apply and full input
+CAN frames through discovery/assignment, automatic enrollment, exact registry serialization/publication and full input
 delivery. ACKs come from the gateway's successful USB interrupt completion
 function, then pass through the generic client's history/lease checks before
 crediting encoder phases. Submission, corrupted completion, stale ACKs and
 elapsed time alone cannot release a pending encoder press/release. Direct USB
 ownership neutralizes gateway input and invalidates pending delivery; fallback
 rearms contacts and requires fresh input. Bus reset rejects stale leases,
-temporary absence retains neutral registry slots, and registry restoration
+temporary absence retains neutral retained controllers, and registry restoration
 preserves their identities.
+
+Disable and Re-enable publication renew the changed device's lease, rearming
+the real generic acquisition state so encoder turns collected while disabled
+cannot appear later. The ten-client lifecycle scenario waits for the ordinary
+450–550 ms jittered Announcement and a subsequent fresh input, asserting neutral
+gateway reports while the client still has its old lease. It also checks
+append-on-Re-enable, unchanged surviving descriptor bytes/report IDs, offline
+ghost retention and removal after the discovery timeout.
 
 This verifies portable firmware interoperability. It does not establish actual
 CAN arbitration, USB enumeration, interrupt delivery, physical wiring or flash
@@ -47,12 +55,12 @@ then drops or delays a fixed number of emitted frames; reverse queue delivery
 exercises reordered traffic. Every other endpoint receives broadcast frames.
 The suite checks lost announcements and assignments, delayed discovery, older
 input arriving after newer input, delayed and dropped completion ACKs, isolated
-input freshness loss, offline/reconnect recovery and stable per-identity slots.
+input freshness loss, offline/reconnect recovery and stable per-identity descriptor order and report IDs.
 Device reboots destroy and reinitialize the client with an incremented boot
 session, testing both a changed CAN source and reuse of the original source.
 Gateway reboot restores the encoded registry and advances the simulated persisted
 epoch. Retained old input/ACK frames must not credit the rebooted device, and old
-input must not activate restored gateway slots before fresh discovery and input.
+input must not activate restored gateway controllers before fresh discovery and input.
 Recovery is checked over bounded simulated time; CAN transfer-ID suppression
 means recovery after loss or source reuse need not happen on the first frame.
 The multi-device suite supplies distinct valid button/axis reports directly;
@@ -61,7 +69,7 @@ delivery. Neither suite executes STM32 startup, HAL, TinyUSB or physical flash.
 
 Additional ten-device scenarios inject a real standard Heartbeat from a rebooted
 client at an occupied device or gateway CAN node ID. They check libcanard address
-repair, route invalidation, renewed leases, stable registry slots, rejection of
+repair, route invalidation, renewed leases, stable controller order and report IDs, rejection of
 retained input/ACKs and stale USB completions, and source-bound messaging recovery.
 Device collisions preserve unaffected clients' leases. Gateway collision handling
 mirrors the board loop's transport reset and lease revocation boundary; clients
@@ -118,8 +126,8 @@ allowing for already-departed delayed frames. Later disconnects also include
 100–400 ms absences that overlap delayed traffic. Wire emission and accepted ACK
 counts must remain unchanged while an endpoint is unavailable. Delayed frames
 already on the wire remain in flight for other endpoints; frames received while
-offline are discarded rather than replayed on reconnect. Permanent registry
-slots remain stable through absence and rediscovery.
+offline are discarded rather than replayed on reconnect. Enabled controllers
+remain stable through absence and rediscovery.
 
 A shuffled initial sweep guarantees a reboot, collision injection and USB
 takeover/release, bus-off recovery and disconnect/reconnect for every device;
@@ -129,9 +137,9 @@ restarts, purged transmit queues, suppressed receives and offline expiration.
 USB completions are delayed by 10–200 ms,
 including snapshots retained across ownership/session changes.
 
-Checks during the fault phase cover stable registry slots, unique live gateway
+Checks during the fault phase cover stable controller order and report IDs, unique live gateway
 routes/sources, bounded transport pools/queues, neutral unavailable/USB-owned
-slots, source/session/lease and sequence guards, identity-specific report bytes,
+controllers, source/session/lease and sequence guards, identity-specific report bytes,
 and ACK provenance from an immutable successful USB completion. Invalidated USB
 snapshots must not produce ACKs. After faults stop, pending traffic remains and
 all ownership is released. Scheduled controller restarts and reconnects still
@@ -169,3 +177,19 @@ sources with AddressSanitizer and UndefinedBehaviorSanitizer enabled. Native
 gateway behavior/journal, all eight generic profile/HID/client tests and the
 shared transport suite also passed. Firmware-common can be supplied through `--common-source`; this migration
 does not change acquisition or the devices' published common dependency pin.
+
+## Automatic lifecycle validation on 2026-10-13
+
+The sanitizer runner passed all focused lifecycle scenarios and all three seeded
+fault traces, each replayed twice. Discovery now enrolls without a registration
+command, and the real layout worker serializes/persists its immutable target
+before publication. Disable/re-enable checks append order and survivor report
+IDs; offline ghosts, guarded Forget and stale USB completions are exercised with
+actual generic CAN clients. The ten-client stress corpus remains the same scale.
+The real acquisition test also queues encoder turns while disabled, verifies
+publication lease renewal discards them, and requires new USB completion for a
+fresh turn after enable.
+Canonical transport tests separately exercise announcements, inputs and presence
+from 32 distinct sources. Neither result establishes 32-device electrical or
+sustained configuration-throughput qualification. Matching common pins now include
+the additive CDC-only helper used by the zero-controller gateway topology.

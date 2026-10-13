@@ -145,6 +145,32 @@ static void ten_devices_test(void) {
     assert(gateway.free_count==OSG_CYPHAL_POOL_BLOCK_COUNT);
     osg_cyphal_destroy(&sender);osg_cyphal_destroy(&gateway);
 }
+static void expanded_routes_test(void) {
+    static osg_cyphal_t sender,gateway;queue_t qs,qg;
+    init(&sender,&qs,1,"org.opensimgear.device");init(&gateway,&qg,100,"org.opensimgear.gateway");
+    osg_gateway_message_t out;
+    const osg_gateway_message_type_t types[]={OSG_GW_ANNOUNCE,OSG_GW_INPUT,OSG_GW_HEARTBEAT};
+    for(unsigned node=1;node<=32;node++) {
+        assert(canard_set_node_id(&sender.canard,(uint8_t)node));
+        for(unsigned i=0;i<sizeof types/sizeof types[0];i++) {
+            osg_gateway_message_t m=message(types[i],node);qs.count=0;
+            m.node=types[i]==OSG_GW_ANNOUNCE ? 0 : (uint8_t)node;
+            assert(osg_cyphal_send(&sender,&m,node) && qs.count==1);
+            assert(osg_cyphal_receive(&gateway,&qs.frames[0],node,&out));
+            assert(out.source_node==node && out.node==m.node);
+        }
+    }
+    assert(gateway.canard.err.oom==0);
+    for(unsigned i=0;i<80;i++) osg_cyphal_tick(&gateway,31033+i);
+    assert(gateway.free_count==OSG_CYPHAL_POOL_BLOCK_COUNT);
+    osg_gateway_message_t m=message(OSG_GW_CONFIG_REQUEST,32);
+    uint8_t payload[64];m.node=32;
+    size_t length=osg_gateway_payload_encode(&m,payload,sizeof payload);assert(length);
+    assert(osg_gateway_payload_decode(osg_gateway_subject(m.type),payload,length,&out) && out.node==32);
+    m.node=33;assert(!osg_gateway_payload_encode(&m,payload,sizeof payload));
+    payload[0]=33;assert(!osg_gateway_payload_decode(OSG_CYPHAL_SUBJECT_CONFIG_REQUEST,payload,length,&out));
+    osg_cyphal_destroy(&sender);osg_cyphal_destroy(&gateway);
+}
 static void clock_test(void) {
     static osg_cyphal_t node;queue_t q;init(&node,&q,1,"org.opensimgear.device");
     osg_gateway_message_t m=message(OSG_GW_INPUT,1),out;
@@ -163,7 +189,7 @@ static void clock_test(void) {
     osg_cyphal_destroy(&node);
 }
 int main(void) {
-    roundtrip_test();standard_services_test();backpressure_reset_collision_test();ten_devices_test();clock_test();
-    puts("PASS: generated DSDL, real Cyphal FD/Classic transfers, TID/CRC guards, Heartbeat/GetInfo, bounded backpressure/OOM, reset/collision and ten-node aging");
+    roundtrip_test();standard_services_test();backpressure_reset_collision_test();ten_devices_test();expanded_routes_test();clock_test();
+    puts("PASS: generated DSDL, real Cyphal FD/Classic transfers, TID/CRC guards, Heartbeat/GetInfo, bounded backpressure/OOM, reset/collision, 32 input routes and RX aging");
     return 0;
 }

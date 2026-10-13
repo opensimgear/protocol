@@ -2,13 +2,17 @@
  * Driver refusal retains TX frames; wire delay never extends TX deadlines.
  * USB completion and persisted registry restoration are portable boundaries. */
 #include "opensimgear/gateway.h"
+#include "opensimgear/gateway_layout.h"
 #include "can_client.h"
 #include <assert.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 
-enum { DEVICES=OSG_GW_MAX_MODULES, GATEWAY=DEVICES, QUEUE=4096 };
+/* Keep the established seeded ten-device impairment corpus; canonical transport
+ * tests separately exercise every application route through the 32-device bound. */
+enum { DEVICES=10, GATEWAY=DEVICES, QUEUE=4096 };
+_Static_assert(DEVICES<=OSG_GW_MAX_MODULES,"Stress bus exceeds gateway capacity");
 typedef struct bus bus_t;
 typedef struct { bus_t *bus; unsigned sender; } endpoint_t;
 typedef struct {
@@ -31,6 +35,7 @@ struct bus {
     uint8_t reports[DEVICES][OSG_GW_MAX_REPORT_SIZE];
     packet_t queue[QUEUE];
     unsigned count, drops, delays, reorders, gateway_migrations, completed[DEVICES];
+    uint8_t descriptor_order[DEVICES],report_ids[DEVICES];
     unsigned fault_sender, fault_subject, drop_remaining, delay_remaining;
     uint32_t delay_ms, now;
     bool reverse, muted[DEVICES];
@@ -288,11 +293,15 @@ static osg_gateway_module_t *module(bus_t *b,unsigned i) {
     int index=osg_gateway_find_module(&b->gateway,&b->clients[i].identity);
     assert(index>=0); return &b->gateway.modules[index];
 }
+static unsigned controller(bus_t *b,unsigned i) {
+    int index=osg_gateway_find_slot(&b->gateway.active,&b->clients[i].identity);
+    assert(index>=0 && b->gateway.active.slots[index].enabled); return (unsigned)index;
+}
 static void check_report(bus_t *b,unsigned i,bool neutral) {
     uint8_t actual[OSG_GW_MAX_REPORT_SIZE],expected[OSG_GW_MAX_REPORT_SIZE];
-    int slot=osg_gateway_find_slot(&b->gateway.active,&b->clients[i].identity); assert(slot==(int)i);
+    unsigned slot=controller(b,i);
     size_t size=osg_gateway_profile_report_size(&b->clients[i].profile);
-    assert(osg_gateway_report(&b->gateway,(unsigned)slot,actual,sizeof actual)==size);
+    assert(osg_gateway_report(&b->gateway,slot,actual,sizeof actual)==size);
     if(neutral) osg_gateway_profile_neutral(&b->clients[i].profile,expected);
     else memcpy(expected,b->reports[i],sizeof expected);
     if(memcmp(actual,expected,size)) {
@@ -329,21 +338,65 @@ static bool send_ack_multi(bus_t *b,const osg_gateway_message_t *ack,const osg_g
     return accepted;
 }
 static void complete_multi(bus_t *b,unsigned i) {
-    int slot=osg_gateway_find_slot(&b->gateway.active,&b->clients[i].identity);assert(slot>=0);
+    unsigned slot=controller(b,i);
     osg_gateway_delivery_t d;uint8_t packet[OSG_GW_MAX_REPORT_SIZE+1];
-    size_t size=osg_gateway_delivery_prepare(&b->gateway,(unsigned)slot,packet+1,sizeof packet-1,&d);
-    assert(d.valid);packet[0]=(uint8_t)(slot+1);
+    size_t size=osg_gateway_delivery_prepare(&b->gateway,slot,packet+1,sizeof packet-1,&d);
+    assert(d.valid);packet[0]=b->gateway.active.slots[slot].report_id;
     osg_gateway_message_t ack;
     assert(osg_gateway_delivery_complete(&b->gateway,&d,packet,size+1,&ack));
     assert(send_ack_multi(b,&ack,&d));
+}
+typedef struct { osg_gateway_registry_t saved; unsigned saves; } multi_persistence_t;
+static bool persist_multi(void *context,const osg_gateway_registry_t *target) {
+    multi_persistence_t *p=context;
+    uint8_t record[OSG_GW_REGISTRY_RECORD_SIZE];
+    assert(osg_gateway_registry_encode(target,record,sizeof record)==sizeof record);
+    assert(osg_gateway_registry_decode(record,sizeof record,&p->saved));
+    p->saves++; return true;
+}
+static void publish_discovered(bus_t *b) {
+    /* Drive the real scheduler with the transport paused for this boot prelude.
+     * Persistence receives an immutable target, then simulated USB detaches
+     * before the core activates it; wire-fault tests use their own clock below. */
+    osg_gateway_layout_t layout={0};multi_persistence_t persistence={0};
+    assert(osg_gateway_needs_apply(&b->gateway));
+    for(unsigned i=0;i<DEVICES;i++) {
+        int index=osg_gateway_find_slot(&b->gateway.pending,&b->clients[i].identity);
+        assert(index>=0 && b->gateway.pending.slots[index].enabled);
+    }
+    assert(osg_gateway_layout_service(&layout,&b->gateway,0,true,persist_multi,&persistence)==OSG_GATEWAY_LAYOUT_IDLE);
+    assert(osg_gateway_layout_service(&layout,&b->gateway,100,true,persist_multi,&persistence)==OSG_GATEWAY_LAYOUT_IDLE);
+    assert(persistence.saves==1);
+    assert(osg_gateway_layout_service(&layout,&b->gateway,200,true,persist_multi,&persistence)==OSG_GATEWAY_LAYOUT_DETACH);
+    assert(osg_gateway_activate_prepared(&b->gateway,&layout.target,true,&layout.activation));
+    assert(osg_gateway_layout_service(&layout,&b->gateway,450,true,persist_multi,&persistence)==OSG_GATEWAY_LAYOUT_ATTACH);
+    assert(!osg_gateway_needs_apply(&b->gateway) && !b->gateway.layout_transition && layout.reconnects==1);
+    for(unsigned i=0;i<DEVICES;i++) {
+        unsigned index=controller(b,i);
+        b->descriptor_order[i]=b->gateway.active.slots[index].order;
+        b->report_ids[i]=b->gateway.active.slots[index].report_id;
+        assert(osg_gateway_find_slot(&persistence.saved,&b->clients[i].identity)>=0);
+    }
+    osg_gateway_set_running(&b->gateway,true);
+    /* Visibility publication renews leases. Deliver the next real periodic
+     * announcement before asserting fresh inputs in the transport prelude. */
+    for(unsigned i=0;i<DEVICES;i++) {
+        osg_can_client_t *client=&b->clients[i];
+        osg_gateway_message_t announcement={.type=OSG_GW_ANNOUNCE,.identity=client->identity,
+            .boot_session=client->boot,.profile=client->profile,
+            .configuration_generation=client->configuration_generation};
+        assert(osg_cyphal_send(&client->cyphal,&announcement,b->now));
+        osg_cyphal_tick(&client->cyphal,b->now);
+    }
+    pump_multi(b);
+    for(unsigned i=0;i<DEVICES;i++) assert(b->clients[i].lease==module(b,i)->lease);
 }
 static void ready_multi(bus_t *b) {
     init_multi(b);tick_multi(b,0);
     for(unsigned i=0;i<DEVICES;i++) {
         assert(osg_can_client_active(&b->clients[i]));
-        assert(osg_gateway_register(&b->gateway,&b->clients[i].identity));
     }
-    osg_gateway_apply_layout(&b->gateway);osg_gateway_set_running(&b->gateway,true);
+    publish_discovered(b);
     tick_multi(b,10);
     for(unsigned i=0;i<DEVICES;i++) check_report(b,i,false);
 }
@@ -357,9 +410,92 @@ static void destroy_multi(bus_t *b) {
     if(b->stress) STRESS_CHECK(b,b->transport.free_count==OSG_CYPHAL_POOL_BLOCK_COUNT);
 }
 static osg_gateway_delivery_t pending_multi(bus_t *b,unsigned i,uint8_t packet[OSG_GW_MAX_REPORT_SIZE+1]) {
-    osg_gateway_delivery_t d;packet[0]=(uint8_t)(i+1);
-    assert(osg_gateway_delivery_prepare(&b->gateway,i,packet+1,OSG_GW_MAX_REPORT_SIZE,&d)==3);
+    unsigned slot=controller(b,i);
+    osg_gateway_delivery_t d;packet[0]=b->gateway.active.slots[slot].report_id;
+    assert(osg_gateway_delivery_prepare(&b->gateway,slot,packet+1,OSG_GW_MAX_REPORT_SIZE,&d)==3);
     assert(d.valid);return d;
+}
+static osg_gateway_layout_event_t lifecycle_multi(bus_t *b,osg_gateway_layout_t *layout,
+                                                 multi_persistence_t *store,uint32_t now) {
+    /* Match the production loop: publication occurs only after disconnect,
+     * and reconnect invalidates reports before accepting fresh CAN input. */
+    b->now=now;
+    osg_gateway_layout_event_t event=osg_gateway_layout_service(layout,&b->gateway,now,true,persist_multi,store);
+    if(event==OSG_GATEWAY_LAYOUT_DETACH) assert(osg_gateway_activate_prepared(&b->gateway,&layout->target,true,&layout->activation));
+    if(event==OSG_GATEWAY_LAYOUT_ATTACH) osg_gateway_set_running(&b->gateway,true);
+    tick_multi(b,now); return event;
+}
+static void controller_lifecycle_multi(bus_t *b) {
+    ready_multi(b);
+    const unsigned victim=3;
+    osg_gateway_identity_t id=b->clients[victim].identity;
+    uint8_t original_id=b->report_ids[victim],before[OSG_GW_DESCRIPTOR_CAPACITY],removed[OSG_GW_DESCRIPTOR_CAPACITY],after[OSG_GW_DESCRIPTOR_CAPACITY];
+    size_t before_size=osg_gateway_descriptor(&b->gateway,before,sizeof before);
+    uint8_t packet[OSG_GW_MAX_REPORT_SIZE+1];
+    osg_gateway_delivery_t old=pending_multi(b,victim,packet);
+    osg_gateway_message_t ack;
+    osg_gateway_layout_t layout={0}; multi_persistence_t store={0};
+    assert(osg_gateway_disable(&b->gateway,&id));
+    assert(lifecycle_multi(b,&layout,&store,10)==OSG_GATEWAY_LAYOUT_IDLE);
+    assert(lifecycle_multi(b,&layout,&store,110)==OSG_GATEWAY_LAYOUT_IDLE && store.saves==1);
+    assert(lifecycle_multi(b,&layout,&store,210)==OSG_GATEWAY_LAYOUT_DETACH);
+    assert(!osg_gateway_delivery_complete(&b->gateway,&old,packet,4,&ack));
+    int record=osg_gateway_find_slot(&b->gateway.active,&id); assert(record>=0);
+    assert(!b->gateway.active.slots[record].enabled && !osg_gateway_report(&b->gateway,(unsigned)record,after,sizeof after));
+    size_t removed_size=osg_gateway_descriptor(&b->gateway,removed,sizeof removed); assert(removed_size<before_size);
+    assert(lifecycle_multi(b,&layout,&store,460)==OSG_GATEWAY_LAYOUT_ATTACH);
+    tick_multi(b,470);
+    assert(module(b,victim)->online && osg_can_client_active(&b->clients[victim]));
+    for(unsigned i=0;i<DEVICES;i++) if(i!=victim) {
+        unsigned entry=controller(b,i);
+        assert(b->gateway.active.slots[entry].report_id==b->report_ids[i]);
+        assert(b->gateway.active.slots[entry].order==(i>victim ? i-1 : i));
+        check_report(b,i,false);
+    }
+    assert(osg_gateway_enable(&b->gateway,&id));
+    assert(lifecycle_multi(b,&layout,&store,470)==OSG_GATEWAY_LAYOUT_IDLE);
+    assert(lifecycle_multi(b,&layout,&store,570)==OSG_GATEWAY_LAYOUT_IDLE && store.saves==2);
+    assert(lifecycle_multi(b,&layout,&store,670)==OSG_GATEWAY_LAYOUT_DETACH);
+    assert(lifecycle_multi(b,&layout,&store,920)==OSG_GATEWAY_LAYOUT_ATTACH);
+    size_t after_size=osg_gateway_descriptor(&b->gateway,after,sizeof after);
+    assert(after_size==before_size && !memcmp(removed,after,removed_size));
+    record=(int)controller(b,victim);
+    assert(b->gateway.active.slots[record].order==DEVICES-1 && b->gateway.active.slots[record].report_id==original_id);
+    /* Re-enable renews the publication lease. The client learns it from its
+     * next ordinary jittered Announcement (450–550 ms), then sends fresh input.
+     * Old-lease input must stay neutral throughout that real transport gap. */
+    uint32_t publication_lease=module(b,victim)->lease;
+    tick_multi(b,930);
+    assert(b->clients[victim].lease<publication_lease && !module(b,victim)->has_input);
+    check_report(b,victim,true);
+    const uint32_t fresh_deadline=920U+OSG_CAN_ANNOUNCE_MS+100U;
+    while(b->now<fresh_deadline && !module(b,victim)->has_input) {
+        tick_multi(b,b->now+10U);
+        if(b->clients[victim].lease!=publication_lease) {
+            assert(!module(b,victim)->has_input);check_report(b,victim,true);
+        }
+    }
+    assert(b->clients[victim].lease==publication_lease && module(b,victim)->has_input);
+    check_report(b,victim,false);complete_multi(b,victim);pump_multi(b);
+    assert(b->completed[victim]==1);
+
+    b->muted[victim]=true;
+    uint32_t offline_at=b->now+OSG_GW_OFFLINE_TIMEOUT_MS;
+    while(b->now<offline_at) tick_multi(b,b->now+10U);
+    assert(!module(b,victim)->online);check_report(b,victim,true);
+    assert(osg_gateway_descriptor(&b->gateway,removed,sizeof removed)==after_size && !memcmp(removed,after,after_size));
+    assert(!osg_gateway_needs_apply(&b->gateway));
+    assert(osg_gateway_forget(&b->gateway,&id));
+    assert(lifecycle_multi(b,&layout,&store,offline_at)==OSG_GATEWAY_LAYOUT_IDLE);
+    assert(lifecycle_multi(b,&layout,&store,offline_at+100U)==OSG_GATEWAY_LAYOUT_IDLE && store.saves==3);
+    assert(lifecycle_multi(b,&layout,&store,offline_at+200U)==OSG_GATEWAY_LAYOUT_DETACH);
+    assert(lifecycle_multi(b,&layout,&store,offline_at+450U)==OSG_GATEWAY_LAYOUT_ATTACH);
+    assert(osg_gateway_find_slot(&b->gateway.active,&id)<0 && osg_gateway_find_module(&b->gateway,&id)<0);
+    assert(osg_gateway_descriptor(&b->gateway,removed,sizeof removed)==removed_size && !memcmp(removed,after,removed_size));
+    tick_multi(b,offline_at+460U);
+    for(unsigned i=0;i<DEVICES;i++) if(i!=victim) { check_report(b,i,false);complete_multi(b,i); }
+    pump_multi(b);destroy_multi(b);
+    puts("PASS: real CAN clients survive Disable/Re-enable append and offline ghost/Forget; surviving report IDs/descriptors retained, stale USB completions rejected");
 }
 static void usb_ownership_multi(bus_t *b) {
     ready_multi(b);
@@ -375,7 +511,7 @@ static void usb_ownership_multi(bus_t *b) {
     assert(!osg_gateway_delivery_complete(&b->gateway,&pending,packet,4,&ack));
     osg_gateway_delivery_t neutral;
     uint8_t neutral_report[OSG_GW_MAX_REPORT_SIZE];
-    assert(osg_gateway_delivery_prepare(&b->gateway,0,neutral_report,sizeof neutral_report,&neutral)==3 && !neutral.valid);
+    assert(osg_gateway_delivery_prepare(&b->gateway,controller(b,0),neutral_report,sizeof neutral_report,&neutral)==3 && !neutral.valid);
     for(uint32_t t=30;t<=130;t+=10) tick_multi(b,t);
     assert(b->completed[0]==0 && b->clients[0].ack_sequence==0);
     check_report(b,0,true);
@@ -567,8 +703,13 @@ static void invariants_stress(bus_t *b) {
             if(!b->offline_seen[i]) { b->offline_seen[i]=true;b->offline_checks[i]++; }
         }
         if(b->bus_off[GATEWAY]) STRESS_CHECK(b,!m->online && !m->has_input);
-        STRESS_CHECK(b,osg_gateway_find_slot(&b->gateway.active,&b->clients[i].identity)==(int)i);
-        STRESS_CHECK(b,osg_gateway_find_slot(&b->gateway.pending,&b->clients[i].identity)==(int)i);
+        unsigned entry=controller(b,i);
+        int desired=osg_gateway_find_slot(&b->gateway.pending,&b->clients[i].identity);
+        STRESS_CHECK(b,desired>=0 && b->gateway.pending.slots[desired].enabled);
+        STRESS_CHECK(b,b->gateway.active.slots[entry].order==b->descriptor_order[i]);
+        STRESS_CHECK(b,b->gateway.active.slots[entry].report_id==b->report_ids[i]);
+        STRESS_CHECK(b,b->gateway.pending.slots[desired].order==b->descriptor_order[i]);
+        STRESS_CHECK(b,b->gateway.pending.slots[desired].report_id==b->report_ids[i]);
         STRESS_CHECK(b,b->clients[i].cyphal.free_count<=OSG_CYPHAL_POOL_BLOCK_COUNT);
         STRESS_CHECK(b,b->clients[i].cyphal.canard.tx.queue_size<=OSG_CYPHAL_TX_CAPACITY);
         if(m->online) {
@@ -581,7 +722,7 @@ static void invariants_stress(bus_t *b) {
         if(!m->online || m->direct_usb || !m->has_input) check_report(b,i,true);
         else {
             uint8_t report[OSG_GW_MAX_REPORT_SIZE];
-            STRESS_CHECK(b,osg_gateway_report(&b->gateway,i,report,sizeof report)==3);
+            STRESS_CHECK(b,osg_gateway_report(&b->gateway,entry,report,sizeof report)==3);
             /* High axis byte identifies the emitter independently of routing;
              * delayed legitimate reports may contain older low-byte values. */
             STRESS_CHECK(b,report[2]==0x40U+i);
@@ -644,8 +785,9 @@ static void usb_stress(bus_t *b,stress_usb_t usb[DEVICES],uint32_t *random) {
             u->pending=false;
         }
         if(!u->pending && random_next(random)%4U==0) {
-            size_t length=osg_gateway_delivery_prepare(&b->gateway,i,u->packet+1,OSG_GW_MAX_REPORT_SIZE,&u->delivery);
-            STRESS_CHECK(b,length==3);u->packet[0]=(uint8_t)(i+1);
+            unsigned entry=controller(b,i);
+            size_t length=osg_gateway_delivery_prepare(&b->gateway,entry,u->packet+1,OSG_GW_MAX_REPORT_SIZE,&u->delivery);
+            STRESS_CHECK(b,length==3);u->packet[0]=b->gateway.active.slots[entry].report_id;
             u->pending=true;u->due=b->now+10U+random_next(random)%191U;
         }
     }
@@ -804,10 +946,12 @@ void multi_device_integration_test(void) {
     assert(!osg_can_client_active(&b.clients[0]));
     b.now=1280;pump_multi(&b);assert(osg_can_client_active(&b.clients[0]));
     for(unsigned i=0;i<DEVICES;i++) {
-        assert(osg_gateway_register(&b.gateway,&b.clients[i].identity));
         for(unsigned j=0;j<i;j++) assert(b.clients[i].node!=b.clients[j].node);
     }
-    osg_gateway_apply_layout(&b.gateway);osg_gateway_set_running(&b.gateway,true);
+    publish_discovered(&b);
+    /* The delayed first device was appended after the other identities, rather
+     * than assigned by this harness's client array index. */
+    assert(b.descriptor_order[0]==DEVICES-1 && b.descriptor_order[1]==0);
     tick_multi(&b,1290);
     for(unsigned i=0;i<DEVICES;i++) { check_report(&b,i,false);complete_multi(&b,i); }
     pump_multi(&b);
@@ -857,7 +1001,7 @@ void multi_device_integration_test(void) {
     assert(module(&b,3)->boot_session==2 && module(&b,3)->input_sequence==sequence);
     assert(b.clients[3].ack_sequence==0);check_report(&b,3,false);
 
-    /* A gateway reboot restores serialized slots, increments the persisted
+    /* A gateway reboot restores serialized controller records, increments the persisted
      * epoch, and initially exposes neutral reports until fresh discovery/input. */
     fault(&b,4,OSG_CYPHAL_SUBJECT_INPUT,0,1,100);tick_multi(&b,2220);
     uint32_t old_leases[DEVICES];for(unsigned i=0;i<DEVICES;i++) old_leases[i]=b.clients[i].lease;
@@ -876,7 +1020,7 @@ void multi_device_integration_test(void) {
         check_report(&b,i,false);complete_multi(&b,i);
     }
     pump_multi(&b);for(unsigned i=0;i<DEVICES;i++) assert(b.clients[i].ack_sequence==module(&b,i)->input_sequence);
-    /* Complete absence expires discovery without removing a permanent slot. */
+    /* Complete absence expires discovery while retaining its enabled collection. */
     b.muted[5]=true;
     for(uint32_t t=3110;t<=4800;t+=10) tick_multi(&b,t);
     assert(!module(&b,5)->online);check_report(&b,5,true);
@@ -896,7 +1040,8 @@ void multi_device_integration_test(void) {
     assert(b.count==0 && b.drops>=4 && b.delays==6 && b.reorders>=DEVICES);
     for(unsigned i=0;i<DEVICES;i++) osg_cyphal_destroy(&b.clients[i].cyphal);
     osg_cyphal_destroy(&b.transport);
-    puts("PASS: ten real clients; dropped discovery/assignment/input/ACK, delayed and reordered frames, isolated freshness/offline recovery, device reboot and gateway reboot with stable restored slots");
+    puts("PASS: ten automatically enrolled real clients; dropped discovery/assignment/input/ACK, delayed and reordered frames, isolated freshness/offline recovery, device reboot and gateway reboot with stable restored controller order/report IDs");
+    controller_lifecycle_multi(&b);
     usb_ownership_multi(&b);
     collision_multi(&b,false);
     collision_multi(&b,true);

@@ -38,14 +38,14 @@ not authentication against a malicious CAN participant.
 Announce carries the module configuration generation independently of the HID
 profile schema revision. A new active configuration renews the lease and rejects
 queued reports from the previous settings even when the HID shape is unchanged.
-Only an actual profile difference requires the gateway's explicit USB layout Apply.
+An actual profile difference requires the gateway's explicit profile-update action.
 Profiles include control counts, axis usages and neutral values; a neutral change
-requires Apply even when descriptor bytes are unchanged.
+requires a profile update even when descriptor bytes are unchanged.
 Configuration messages carry 24-byte fragments with the current identity, boot,
 route, lease, epoch and request ID. See the [runtime configuration contract](../serial/runtime-configuration.md)
 for assembly bounds, writer ownership, persistence and replay behavior.
 
-`logical_node` values 1–10 identify gateway-local routes and are independent of
+`logical_node` values 1–32 identify gateway-local routes and are independent of
 the transport's 7-bit CAN node-ID. Each chain has one physical controller shared
 by the gateway's two sockets. Pinned libcanard 5.0 uses Cyphal/CAN 1.1 automatic
 node-ID occupancy/collision tracking, so logical lease assignment does not allocate
