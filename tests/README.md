@@ -48,6 +48,16 @@ CAN arbitration, USB enumeration, interrupt delivery, physical wiring or flash
 power-loss behavior; those require their own board and journal checks. Canonical
 generated payload and transport tests live under `../cyphal/tests/`.
 
+The runner also executes `panel_events_integration.c`, linking the real common
+event collector, generic configuration envelope handler and gateway forwarder.
+It captures a debounced press/release without HID ownership, transports baseline
+and pages through sealed Cyphal fragments, checks immutable cached reads after
+later input and routes fresh pages with direct USB active. It fills the 64-record
+ring, validates explicit gap/16-record pagination, resets the stream on runtime
+activation and rejects stale-stream reads. Settings are not claimed or mutated
+by reads. The Master Caution native/board profiles share logical control 0 and
+`led.status.set_mode`; physical validation remains deferred.
+
 The same runner also executes `multi_device_integration.c`: ten independent real
 device CAN clients broadcast through a deterministic frame queue to one actual
 gateway core and transport. Fault injection selects a sender and Cyphal subject,
@@ -161,15 +171,15 @@ valid single-frame CAN FD payload changes have no Cyphal transfer CRC, while
 physical CAN CRC rejection is outside the harness. Its fixed corpus is bounded coverage rather than exhaustive
 fault exploration.
 
-GitHub Actions runs both integration suites with AddressSanitizer and
+GitHub Actions runs the integration suites with AddressSanitizer and
 UndefinedBehaviorSanitizer on pushes, pull requests and manual dispatches in
 `protocol`, `device-template` and `device-gateway` through each repository's
 `.github/workflows/cyphal-integration.yml`. The triggering repository uses the
-event checkout (including the pull-request merge); its two companions use
-`main`. Both firmware common pins must match, and that exact common commit is
+event checkout (including the pull-request merge); companion revisions are
+declared by each workflow or its repository-owned dependency manifest. Both firmware common pins must match, and that exact common commit is
 checked out. The runner also enforces matching canonical Cyphal snapshots.
-Coordinated protocol migrations therefore require compatible companion changes
-on `main` before all three checks can pass. All CI checkouts and scratch builds
+Coordinated protocol migrations therefore require compatible companion revisions
+and dependency pins before all three checks can pass. All CI checkouts and scratch builds
 live under `.research/ci/`; sanitizer findings fail the job.
 
 On 2026-10-12 the Cyphal runner passed against the local gateway and generic
@@ -193,3 +203,12 @@ Canonical transport tests separately exercise announcements, inputs and presence
 from 32 distinct sources. Neither result establishes 32-device electrical or
 sustained configuration-throughput qualification. Matching common pins now include
 the additive CDC-only helper used by the zero-controller gateway topology.
+
+## Panel-event validation on 2026-10-13
+
+The sanitizer runner passed the sealed-envelope event fixture, all existing
+focused lifecycle/ten-client cases and all three seeded fault traces, each
+replayed twice. Device/gateway shared-Cyphal copies remain byte-identical to
+canonical sources. The common event collector also passes native bounds and
+recovery tests with 99.14% line coverage. Software interoperability does not
+establish electrical button capture, physical CAN or bench qualification.
