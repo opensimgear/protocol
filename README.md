@@ -8,8 +8,9 @@ This is work in progress ahead of going live. Existing contract identifiers desc
 
 | Contract | Consumers | Current behavior |
 | --- | --- | --- |
-| [Cyphal/CAN](cyphal/README.md) | STM32 device-gateway, generic Rev B device and native-backed Python peer | Generated identity/profile, controller lease, input and delivery-ACK transfers, bounded module configuration; node-ID autoconfiguration, heartbeat and node information |
-| [STM32 gateway CDC v3](serial/stm32-gateway-v3.md) | Gateway firmware and Cockpit's Rust STM32 adapter | Automatic enrollment, ordered enabled controllers, offline ghosts, remembered disable/enable, guarded offline removal and profile updates, asynchronous persistent USB publication and routed configuration |
+| [Cyphal/CAN](cyphal/README.md) | STM32 device-gateway, generic Rev B device and native-backed Python peer | Generated identity/profile, controller lease, input and delivery-ACK transfers, bounded module configuration and device actions; node-ID autoconfiguration, heartbeat and node information |
+| [STM32 gateway CDC v3](serial/stm32-gateway-v3.md) | Gateway firmware and Cockpit's Rust STM32 adapter | Automatic enrollment, ordered enabled controllers, offline ghosts, remembered disable/enable, guarded offline removal and profile updates, asynchronous persistent USB publication and routed configuration/actions |
+| [Device-advertised actions](serial/device-actions.md) | Module direct USB, CAN gateway, Cockpit and native firmware emulator | Bounded paginated typed catalogue, validated invocation/readback, board LED override and simulated RGB/boolean LEDs |
 | [Runtime module configuration](serial/runtime-configuration.md) | Module direct USB, CAN gateway, Cockpit and native firmware emulator | Exclusive drafts, all input mappings/calibration, Apply/Save/Discard, flash recovery and generated HID descriptors |
 
 The gateway automatically enables and appends new compatible identities, with bounds of 32 runtime modules, remembered devices and enabled controllers. Profiles support 128 buttons, four hats and eight axes. Descriptor order and report IDs are independent of CAN routes and Cyphal node IDs. Enabled offline devices retain neutral collections; disabling removes a collection while remembering the choice, and re-enabling appends it. Offline devices can be forgotten with a binding warning. Zero enabled controllers expose CDC only. Direct device USB has input priority. Sequence/session/lease and source-node checks reject stale delivery; gateway USB completion credits encoder pulses. These application rules remain above the Cyphal transport.
@@ -28,7 +29,7 @@ The [automatic enrollment architecture](https://github.com/opensimgear/opensimge
 
 - [cyphal/](cyphal/README.md): canonical bounded transport, generated bindings and pinned libcanard source, snapshotted into each device for independent builds.
 - [reference/can-fd-v2/](reference/can-fd-v2/README.md): historical private codec snapshot and SHA-256 manifest.
-- [serial/](serial/README.md): current STM32 CDC v3, legacy CDC v2 and runtime configuration APIs.
+- [serial/](serial/README.md): current STM32 CDC v3, legacy CDC v2, runtime configuration and device action APIs.
 - [test-vectors/](test-vectors/README.md): historical private CAN frames and current gateway formatter snapshots.
 - [tests/](tests/README.md): integration runner linking gateway, generic client and shared acquisition code.
 - `tools/verify_can_vendors.py`: checks canonical transport snapshots and stored or freshly generated CDC fixtures.
@@ -58,7 +59,7 @@ Implementation and qualification work is tracked in the [GitHub project](https:/
 - [Device gateway](https://github.com/opensimgear/device-gateway): gateway CAN/CDC/HID implementation and electronics.
 - [Device template](https://github.com/opensimgear/device-template): generic Cyphal device with direct USB input ownership.
 - [Firmware common](https://github.com/opensimgear/firmware-common): reusable acquisition and USB code; pinned protocol source dependency.
-- [Cockpit](https://github.com/opensimgear/cockpit): native host adapters, device lifecycle and module configuration/calibration UI.
+- [Cockpit](https://github.com/opensimgear/cockpit): native host adapters, device lifecycle, module configuration/calibration and manual device actions UI.
 - [Website](https://github.com/opensimgear/opensimgear.github.io): architecture and user documentation.
 
 ## Licensing

@@ -18,7 +18,7 @@ Disable removes a collection but remembers the identity, profile and explicit
 disabled choice. Announcements and reboots do not undo that choice. Enable
 appends the remembered controller at the end of the enabled list; surviving
 collections retain their order, report IDs and controls. Disabled online devices
-remain reachable for configuration. Forget is restricted to offline identities
+remain reachable for configuration and device-advertised actions. Forget is restricted to offline identities
 and deletes remembered state. Later rediscovery then behaves as first discovery.
 Forgetting an already disabled record does not change USB.
 
@@ -43,13 +43,17 @@ cockpit <id> <epoch> disable <32-hex-module-identity>
 cockpit <id> <epoch> forget <32-hex-module-identity>
 cockpit <id> <epoch> update-profile <32-hex-module-identity>
 cockpit <id> <epoch> config <32-hex-module-identity> <module-boot> <child-command>
+cockpit <id> <epoch> action <32-hex-module-identity> <module-boot> <child-command>
 ```
 
 There is no register/save/apply onboarding. Update-profile is the explicit action
 for replacing an existing retained HID profile with a changed observed profile;
 it may affect bindings. Configuration child commands retain the existing
 [runtime configuration grammar](runtime-configuration.md), writer ownership,
-session guards and Apply/Save/Discard semantics.
+session guards and Apply/Save/Discard semantics. Action child commands use the
+[device action grammar](device-actions.md), without configuration claims or
+persistence. The reply snapshot adds `targetAction` for actions and `targetConfig`
+for settings; both are request-scoped.
 
 An accepted lifecycle command can acknowledge staging before persistence and
 USB publication finish. Clients observe subsequent snapshots and recover the
@@ -69,7 +73,9 @@ The next assignment rearms acquisition and discards encoder events accumulated
 while disabled. Old input and completion acknowledgements cannot cross this
 boundary. Lease capacity is reserved before detach; exhaustion leaves the prior
 layout active and reports `lease_exhausted`.
-Configuration dispatch waits for accepted traffic on the new lease. Before that
+Configuration and action dispatch wait for accepted traffic on the new lease.
+Application Status supplies that proof even while HID is disabled or direct USB
+owns the inputs; route readiness does not require input reports. Before that
 proof, requests fail before transmission with `configuration_route_not_ready`;
 clients may retry read-only configuration queries after fresh snapshots. An
 ambiguous configuration mutation is reconciled by readback rather than replay.

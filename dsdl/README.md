@@ -44,6 +44,11 @@ requires a profile update even when descriptor bytes are unchanged.
 Configuration messages carry 24-byte fragments with the current identity, boot,
 route, lease, epoch and request ID. See the [runtime configuration contract](../serial/runtime-configuration.md)
 for assembly bounds, writer ownership, persistence and replay behavior.
+The same sealed envelopes carry the separate [device action commands](../serial/device-actions.md)
+by their `action ` prefix, with no configuration claim or flash write. Descriptor
+format/catalogue revisions live in that application JSON, not DSDL versions.
+Application Status proves the fresh lease independently of HID input ownership
+and keeps actions reachable for disabled or direct USB devices.
 
 `logical_node` values 1–32 identify gateway-local routes and are independent of
 the transport's 7-bit CAN node-ID. Each chain has one physical controller shared

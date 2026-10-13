@@ -38,7 +38,10 @@ seven application subjects consume 70 blocks and are covered by the portable tes
 The expanded route test covers 32 sources concurrently publishing Announce, Input
 and Status. The pool is still bounded: simultaneous configuration/session traffic
 can create additional pressure, so 32 routes is a software capacity rather than
-a measured aggregate throughput guarantee.
+a measured aggregate throughput guarantee. The bounded configuration envelopes
+also carry [device actions](https://github.com/opensimgear/protocol/blob/main/serial/device-actions.md), selected by the `action `
+command prefix; no new subjects or sealed DSDL edits are required. Application
+Status provides route proof even when HID input is disabled or direct USB owned.
 
 Call `tick` every main-loop iteration and whenever the driver can accept more frames.
 All receive/send/tick operations must share one serialized execution context.
