@@ -12,7 +12,7 @@
 /* Keep the established seeded ten-device impairment corpus; canonical transport
  * tests separately exercise every application route through the 32-device bound. */
 enum { DEVICES=10, GATEWAY=DEVICES, QUEUE=4096 };
-_Static_assert(DEVICES<=OSG_GW_MAX_MODULES,"Stress bus exceeds gateway capacity");
+_Static_assert((unsigned)DEVICES<=(unsigned)OSG_GW_MAX_MODULES,"Stress bus exceeds gateway capacity");
 typedef struct bus bus_t;
 typedef struct { bus_t *bus; unsigned sender; } endpoint_t;
 typedef struct {
