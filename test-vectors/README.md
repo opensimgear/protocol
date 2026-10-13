@@ -8,5 +8,4 @@ states. Gateway tests generate the current CDC snapshots with
 The CDC interface remains v2 and reports `canProtocol=3`. Canonical Cyphal tests
 exercise generated payloads, actual libcanard transfers and node services.
 
-Future canonical vectors must also cover simultaneous independent gateways,
-cross-chain identity conflicts and output/configuration session routing.
+Conformance expansion is tracked in the [GitHub project](https://github.com/orgs/opensimgear/projects/2).

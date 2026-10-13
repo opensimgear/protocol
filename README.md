@@ -24,7 +24,7 @@ Cyphal firmware rejects the replaced private CAN v1/v2 wire peers. Existing regi
 
 - [cyphal/](cyphal/README.md): canonical bounded transport, generated bindings and pinned libcanard source, snapshotted into each device for independent builds.
 - [reference/can-fd-v2/](reference/can-fd-v2/README.md): historical private codec snapshot and SHA-256 manifest.
-- [serial/](serial/README.md): implemented STM32 CDC v2 and runtime configuration APIs; output/session contracts remain planned.
+- [serial/](serial/README.md): implemented STM32 CDC v2 and runtime configuration APIs.
 - [test-vectors/](test-vectors/README.md): historical private CAN frames and current gateway formatter snapshots.
 - [tests/](tests/README.md): integration runner linking gateway, generic client and shared acquisition code.
 - `tools/verify_can_vendors.py`: checks canonical transport snapshots and stored or freshly generated CDC fixtures.
@@ -47,13 +47,7 @@ TMPDIR="$PWD/.research" python3 protocol/tests/run_gateway_generic.py \
 
 Supply the common checkout matching the generic firmware's full commit pin. These checks use a host compiler and existing sources; they do not fetch dependencies or flash hardware. The [integration guide](tests/README.md) documents the optional prepared-source default and test boundaries.
 
-## Planned production semantics
-
-Module settings/calibration now use a shared bounded runtime model and stable gateway/module identities. Multiple independent chains may reuse node IDs; host routes must resolve the current identity and session rather than treat node IDs as globally unique. Direct USB/CAN inventory merging, cross-chain duplicate-identity diagnostics and migration handling remain future work in Cockpit.
-
-Configuration allows one writer per module, separate drafts, explicit Apply/Save and interrupted-write protection. The native emulator verifies this flow through Cockpit's actual Rust adapter and production C handlers. Output ownership will use active sessions and fresh commands, with direct USB priority. Firmware update/recovery behavior is not defined by the prototype contracts. Those features must not be inferred from an input heartbeat or gateway registry API.
-
-Generate bindings where supported, otherwise check adapters against shared vectors. Do not assume an available DSDL-to-Rust generator. Keep these contracts as work in progress until going live; production compatibility will require tested firmware/Cockpit combinations and measured limits. No production compatibility matrix has been released.
+Implementation and qualification work is tracked in the [GitHub project](https://github.com/orgs/opensimgear/projects/2).
 
 ## Related repositories
 
@@ -65,4 +59,4 @@ Generate bindings where supported, otherwise check adapters against shared vecto
 
 ## Licensing
 
-OpenSimGear license selection remains pending; no license grant is implied for newly authored definitions or reference code. Production protocol, firmware and hardware releases require documented licensing and compatible USB identifiers.
+No OpenSimGear license grant is implied for newly authored definitions or reference code. Production protocol, firmware and hardware releases require documented licensing and compatible USB identifiers.
