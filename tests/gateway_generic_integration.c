@@ -2,6 +2,7 @@
  * with the real gateway core, registry, Cyphal stack and USB-completion boundary.
  * Both endpoints exchange real libcanard frames with generated DSDL payloads. */
 #include "opensimgear/gateway.h"
+#include "opensimgear/gateway_layout.h"
 #include "can_client.h"
 #include "can_delivery.h"
 #include <assert.h>
@@ -74,6 +75,11 @@ static void pump(fixture_t *f,uint32_t now) {
             f->assignments++;
         } else {
             assert(decoded.type==OSG_GW_INPUT);
+            int module=osg_gateway_find_module(&f->gateway,&f->client.identity);
+            if(module>=0 && decoded.lease!=f->gateway.modules[module].lease) {
+                assert(result==OSG_GW_RX_REJECTED); /* Old input can already be in flight at publication. */
+                continue;
+            }
             assert(result==OSG_GW_RX_ACCEPTED);
             f->last_input=f->queued[i];
             f->last_input_message=decoded;
@@ -144,8 +150,9 @@ static void init(fixture_t *f) {
 }
 static osg_gateway_delivery_t submit(fixture_t *f,uint8_t packet[OSG_GW_MAX_REPORT_SIZE+1]) {
     osg_gateway_delivery_t delivery;
-    packet[0]=1; /* Permanent slot 0 is report ID 1. */
-    assert(osg_gateway_delivery_prepare(&f->gateway,0,packet+1,OSG_GW_MAX_REPORT_SIZE,&delivery)==OSG_GW_MAX_REPORT_SIZE);
+    int record=osg_gateway_find_slot(&f->gateway.active,&f->client.identity); assert(record>=0);
+    packet[0]=f->gateway.active.slots[record].report_id;
+    assert(osg_gateway_delivery_prepare(&f->gateway,(unsigned)record,packet+1,OSG_GW_MAX_REPORT_SIZE,&delivery)==OSG_GW_MAX_REPORT_SIZE);
     return delivery;
 }
 static osg_gateway_frame_t complete(fixture_t *f,const osg_gateway_delivery_t *delivery,
@@ -165,33 +172,90 @@ static osg_gateway_frame_t complete(fixture_t *f,const osg_gateway_delivery_t *d
 static void neutral_gateway(const fixture_t *f) {
     uint8_t actual[OSG_GW_MAX_REPORT_SIZE],expected[OSG_GW_MAX_REPORT_SIZE];
     osg_gateway_profile_neutral(&f->client.profile,expected);
-    assert(osg_gateway_report(&f->gateway,0,actual,sizeof actual)==sizeof actual);
+    int record=osg_gateway_find_slot(&f->gateway.active,&f->client.identity); assert(record>=0);
+    assert(osg_gateway_report(&f->gateway,(unsigned)record,actual,sizeof actual)==sizeof actual);
     assert(!memcmp(actual,expected,sizeof actual));
 }
 
-static void register_maximum_profile(fixture_t *f) {
+typedef struct { osg_gateway_registry_t saved; unsigned saves; } persistence_t;
+static bool persist_layout(void *context,const osg_gateway_registry_t *target) {
+    persistence_t *p=context;
+    uint8_t record[OSG_GW_REGISTRY_RECORD_SIZE];
+    assert(osg_gateway_registry_encode(target,record,sizeof record)==sizeof record);
+    assert(osg_gateway_registry_decode(record,sizeof record,&p->saved));
+    p->saves++; return true;
+}
+static void refresh_assignment(fixture_t *f,uint32_t now) {
+    /* A periodic production Announcement returns the lease renewed at USB
+     * publication. Execute its real generated transport and client handler. */
+    osg_gateway_message_t announcement={.type=OSG_GW_ANNOUNCE,.identity=f->client.identity,
+        .boot_session=f->client.boot,.profile=f->client.profile,
+        .configuration_generation=f->client.configuration_generation};
+    assert(osg_cyphal_send(&f->client.cyphal,&announcement,now));
+    pump(f,now);
+    assert(f->client.lease==f->gateway.modules[0].lease);
+}
+static void enroll_maximum_profile(fixture_t *f) {
     osg_can_client_tick(&f->client,0,f->report);pump(f,0);
     assert(f->announces==1 && f->assignments==1 && f->inputs==0);
     assert(osg_can_client_active(&f->client));
     assert(osg_gateway_find_module(&f->gateway,&f->client.identity)==0);
     assert(osg_gateway_find_slot(&f->gateway.active,&f->client.identity)==-1);
-    assert(osg_gateway_register(&f->gateway,&f->client.identity));
+    int pending=osg_gateway_find_slot(&f->gateway.pending,&f->client.identity); assert(pending>=0);
+    assert(f->gateway.pending.slots[pending].enabled);
     assert(osg_gateway_needs_apply(&f->gateway));
-    uint8_t record[OSG_GW_REGISTRY_RECORD_SIZE];
-    size_t length=osg_gateway_registry_encode(&f->gateway.pending,record,sizeof record);
-    osg_gateway_registry_t persisted;
-    assert(length==sizeof record && osg_gateway_registry_decode(record,length,&persisted));
-    assert(osg_gateway_profile_equal(&persisted.slots[0].profile,&f->client.profile));
-    f->gateway.pending=persisted;
-    /* The board calls this only after its journal commits and USB detaches.
-     * Here the portable core boundary is exercised, without claiming hardware. */
-    osg_gateway_apply_layout(&f->gateway);
+    osg_gateway_layout_t layout={0}; persistence_t persistence={0};
+    /* Exercise the actual lifecycle scheduler while the acquisition/bus fixture
+     * is paused. Subsequent encoder timings retain their independent origin. */
+    assert(osg_gateway_layout_service(&layout,&f->gateway,0,true,persist_layout,&persistence)==OSG_GATEWAY_LAYOUT_IDLE);
+    assert(osg_gateway_layout_service(&layout,&f->gateway,100,true,persist_layout,&persistence)==OSG_GATEWAY_LAYOUT_IDLE);
+    assert(persistence.saves==1 && osg_gateway_profile_equal(&persistence.saved.slots[pending].profile,&f->client.profile));
+    assert(osg_gateway_layout_service(&layout,&f->gateway,200,true,persist_layout,&persistence)==OSG_GATEWAY_LAYOUT_DETACH);
+    assert(osg_gateway_activate_prepared(&f->gateway,&layout.target,true,&layout.activation));
+    assert(osg_gateway_layout_service(&layout,&f->gateway,449,true,persist_layout,&persistence)==OSG_GATEWAY_LAYOUT_IDLE);
+    assert(osg_gateway_layout_service(&layout,&f->gateway,450,true,persist_layout,&persistence)==OSG_GATEWAY_LAYOUT_ATTACH);
+    assert(layout.reconnects==1 && !f->gateway.layout_transition);
     assert(!osg_gateway_needs_apply(&f->gateway));
-    assert(osg_gateway_find_slot(&f->gateway.active,&f->client.identity)==0);
+    assert(osg_gateway_find_slot(&f->gateway.active,&f->client.identity)==pending);
     uint8_t descriptor[OSG_GW_DESCRIPTOR_CAPACITY];
     assert(osg_gateway_descriptor(&f->gateway,descriptor,sizeof descriptor)>0);
     osg_gateway_set_running(&f->gateway,true);
+    refresh_assignment(f,0);
     acquire(f,0);acquire(f,11); /* Released contacts arm through real debounce. */
+}
+static void disabled_encoder_rearm_test(void) {
+    fixture_t f; init(&f); enroll_maximum_profile(&f);
+    detent(&f,12); transmit(&f,23);
+    assert(f.acquisition.encoders[0].phase==WAIT_PRESS);
+    uint8_t old_packet[OSG_GW_MAX_REPORT_SIZE+1];
+    osg_gateway_delivery_t old_delivery=submit(&f,old_packet); assert(old_delivery.valid);
+    osg_gateway_message_t old_input=f.last_input_message,ignored;
+    uint32_t old_lease=f.client.lease;
+    assert(osg_gateway_disable(&f.gateway,&f.client.identity));
+    assert(osg_gateway_activate(&f.gateway,&f.gateway.pending,true));
+    osg_gateway_set_running(&f.gateway,true); refresh_assignment(&f,30);
+    assert(f.client.lease>old_lease && f.acquisition.encoders[0].phase==IDLE);
+    detent(&f,40); transmit(&f,51); detent(&f,52); acquire(&f,56);
+    assert(f.acquisition.encoders[0].phase==WAIT_PRESS && f.acquisition.encoders[0].count==1);
+    int record=osg_gateway_find_slot(&f.gateway.active,&f.client.identity); assert(record>=0);
+    assert(osg_gateway_report(&f.gateway,(unsigned)record,old_packet,sizeof old_packet)==0);
+    assert(osg_gateway_enable(&f.gateway,&f.client.identity));
+    assert(osg_gateway_activate(&f.gateway,&f.gateway.pending,true));
+    osg_gateway_set_running(&f.gateway,true); refresh_assignment(&f,60);
+    assert(f.acquisition.encoders[0].phase==IDLE && f.acquisition.encoders[0].count==0);
+    assert(osg_gateway_receive(&f.gateway,&old_input,61,&ignored)==OSG_GW_RX_REJECTED);
+    assert(!osg_gateway_delivery_complete(&f.gateway,&old_delivery,old_packet,sizeof old_packet,&ignored));
+    transmit(&f,72);
+    uint8_t fresh_packet[OSG_GW_MAX_REPORT_SIZE+1];
+    osg_gateway_delivery_t fresh=submit(&f,fresh_packet); assert(fresh.valid);
+    assert(!(fresh_packet[16]&0xc0)); /* Neither disabled turn replays. */
+    complete(&f,&fresh,fresh_packet,73);
+    detent(&f,74); transmit(&f,85);
+    fresh=submit(&f,fresh_packet); assert(fresh.valid && (fresh_packet[16]&0xc0));
+    complete(&f,&fresh,fresh_packet,86);
+    assert(f.acquisition.encoders[0].phase==HOLD);
+    osg_cyphal_destroy(&f.client.cyphal); osg_cyphal_destroy(&f.gateway_transport);
+    puts("PASS: disabled encoder turns are discarded by publication lease renewal; new turns require fresh completion");
 }
 static void encoder_completion_test(fixture_t *f) {
     closed(f,2,true);closed(f,128,true);closed(f,133,true);closed(f,136,true);closed(f,137,true);
@@ -209,7 +273,7 @@ static void encoder_completion_test(fixture_t *f) {
     osg_gateway_delivery_t press=submit(f,press_packet);
     assert(press.valid && !memcmp(press_packet+1,f->report,OSG_GW_MAX_REPORT_SIZE));
     osg_gateway_message_t ignored;
-    uint8_t bad[sizeof press_packet];memcpy(bad,press_packet,sizeof bad);bad[0]=2;
+    uint8_t bad[sizeof press_packet];memcpy(bad,press_packet,sizeof bad);bad[0]^=0x80;
     assert(!osg_gateway_delivery_complete(&f->gateway,&press,bad,sizeof bad,&ignored));
     assert(!osg_gateway_delivery_complete(&f->gateway,&press,press_packet,sizeof press_packet-1,&ignored));
     memcpy(bad,press_packet,sizeof bad);bad[16]^=0x40;
@@ -294,17 +358,20 @@ static void offline_registry_test(fixture_t *f) {
     size_t length=osg_gateway_registry_encode(&f->gateway.active,record,sizeof record);
     assert(length==sizeof record && osg_gateway_registry_decode(record,length,&restored));
     osg_gateway_t rebooted;assert(osg_gateway_init(&rebooted,131072,&restored));
-    assert(rebooted.active.slots[0].occupied && !rebooted.modules[0].online);
-    assert(osg_gateway_identity_equal(&rebooted.active.slots[0].identity,&f->client.identity));
+    int entry=osg_gateway_find_slot(&rebooted.active,&f->client.identity); assert(entry>=0);
+    int inventory=osg_gateway_find_module(&rebooted,&f->client.identity); assert(inventory>=0);
+    assert(rebooted.active.slots[entry].occupied && rebooted.active.slots[entry].enabled && !rebooted.modules[inventory].online);
+    assert(osg_gateway_identity_equal(&rebooted.active.slots[entry].identity,&f->client.identity));
 }
 void multi_device_integration_test(void);
 int main(void) {
-    fixture_t f;init(&f);register_maximum_profile(&f);
+    fixture_t f;init(&f);enroll_maximum_profile(&f);
     encoder_completion_test(&f);ownership_and_stale_lease_test(&f);offline_registry_test(&f);
     assert(f.announces>=4 && f.assignments==f.announces && f.inputs>=6 && f.completion_acks==4);
     puts("PASS: real generic acquisition -> CAN discovery/assignment -> persistent registry -> gateway HID completion ACK -> encoder delivery; ownership, lease and offline guards");
     osg_cyphal_destroy(&f.client.cyphal);
     osg_cyphal_destroy(&f.gateway_transport);
+    disabled_encoder_rearm_test();
     multi_device_integration_test();
     return 0;
 }

@@ -1,6 +1,6 @@
 # OpenSimGear protocol
 
-Shared wire contracts, generated DSDL and conformance checks for OpenSimGear firmware and Cockpit. The STM32 gateway and generic device use **Cyphal/CAN**, with a separate gateway CDC v2 API for Cockpit. The application contract is version 3; the replaced private CAN FD v2 codec remains as a historical reference.
+Shared wire contracts, generated DSDL and conformance checks for OpenSimGear firmware and Cockpit. The STM32 gateway and generic device use **Cyphal/CAN**, with a separate gateway CDC v3 API for Cockpit. The CAN application contract remains version 3; the replaced private CAN FD v2 codec remains as a historical reference.
 
 This is work in progress ahead of going live. Existing contract identifiers describe the current implementation; no production release is declared.
 
@@ -9,22 +9,26 @@ This is work in progress ahead of going live. Existing contract identifiers desc
 | Contract | Consumers | Current behavior |
 | --- | --- | --- |
 | [Cyphal/CAN](cyphal/README.md) | STM32 device-gateway, generic Rev B device and native-backed Python peer | Generated identity/profile, controller lease, input and delivery-ACK transfers, bounded module configuration; node-ID autoconfiguration, heartbeat and node information |
-| [STM32 gateway CDC v2](serial/stm32-gateway-v2.md) | Gateway firmware and Cockpit's Rust STM32 adapter | Correlated bounded snapshots, inventory and registry staging, routed module configuration, epoch-guarded mutation and explicit persistent Apply layout |
+| [STM32 gateway CDC v3](serial/stm32-gateway-v3.md) | Gateway firmware and Cockpit's Rust STM32 adapter | Automatic enrollment, ordered enabled controllers, offline ghosts, remembered disable/enable, guarded offline removal and profile updates, asynchronous persistent USB publication and routed configuration |
 | [Runtime module configuration](serial/runtime-configuration.md) | Module direct USB, CAN gateway, Cockpit and native firmware emulator | Exclusive drafts, all input mappings/calibration, Apply/Save/Discard, flash recovery and generated HID descriptors |
 
-The gateway supports up to ten controller slots and profiles with 128 buttons, four hats and eight axes. These slots are independent of Cyphal node IDs. Direct device USB has input priority. Sequence/session/lease and source-node checks reject stale delivery; gateway USB completion credits encoder pulses. Persisted gateway slots survive temporary absence and remain neutral when inputs are unavailable. These application rules remain above the Cyphal transport.
+The gateway automatically enables and appends new compatible identities, with bounds of 32 runtime modules, remembered devices and enabled controllers. Profiles support 128 buttons, four hats and eight axes. Descriptor order and report IDs are independent of CAN routes and Cyphal node IDs. Enabled offline devices retain neutral collections; disabling removes a collection while remembering the choice, and re-enabling appends it. Offline devices can be forgotten with a binding warning. Zero enabled controllers expose CDC only. Direct device USB has input priority. Sequence/session/lease and source-node checks reject stale delivery; gateway USB completion credits encoder pulses. These application rules remain above the Cyphal transport.
 
 Cockpit consumes actual C formatter fixtures. Software tests establish portable source interoperability; assembled STM32 USB/CAN, timing, power and flash brownout behavior remain unverified.
 
 The [native integration harness](tests/README.md) checks ten concurrent device clients through discovery, messaging, frame loss/delay/reordering, reboots, CAN node-ID collisions and direct USB ownership changes. Seeded randomized stress combines these faults with duplicate and malformed frames, CAN transmit backpressure, simulated bus-off recovery and device disconnect/reconnect, checks delivery and queue invariants, and requires all ten devices to recover after faults stop. Each seed is replayed to verify determinism. GitHub Actions runs it with address and undefined-behavior sanitizers.
 
-Cyphal firmware rejects the replaced private CAN v1/v2 wire peers. Existing registry storage remains compatible, including its older v1 migration. The Pico W simulator uses its own protocol-1 adapter. Update matching STM32 device/gateway firmware together. See [compatibility](compatibility/README.md).
+Cyphal firmware rejects the replaced private CAN v1/v2 wire peers. Sparse v1/v2 registry storage migrates to v3 while preserving registered controller order and report IDs. Cockpit retains a separate legacy CDC v2 adapter. The Pico W simulator uses its own protocol-1 adapter. Update matching STM32 device/gateway firmware together for the expanded logical-route bound. See [compatibility](compatibility/README.md).
+
+## Controller lifecycle and bindings
+
+The [automatic enrollment architecture](https://github.com/opensimgear/opensimgear.github.io/blob/main/src/content/docs/gear/architecture/usb-hid.md) preserves surviving controller order, report IDs and control definitions. No permanent management collection is exposed. A descriptor change reconnects USB after saving the exact generation. Removing a collection or crossing the single/multiple collection boundary can still change Windows identities and require game rebinding. Software evidence does not replace [physical Windows and game qualification](https://github.com/opensimgear/device-gateway/issues/6).
 
 ## Layout
 
 - [cyphal/](cyphal/README.md): canonical bounded transport, generated bindings and pinned libcanard source, snapshotted into each device for independent builds.
 - [reference/can-fd-v2/](reference/can-fd-v2/README.md): historical private codec snapshot and SHA-256 manifest.
-- [serial/](serial/README.md): implemented STM32 CDC v2 and runtime configuration APIs.
+- [serial/](serial/README.md): current STM32 CDC v3, legacy CDC v2 and runtime configuration APIs.
 - [test-vectors/](test-vectors/README.md): historical private CAN frames and current gateway formatter snapshots.
 - [tests/](tests/README.md): integration runner linking gateway, generic client and shared acquisition code.
 - `tools/verify_can_vendors.py`: checks canonical transport snapshots and stored or freshly generated CDC fixtures.
@@ -54,7 +58,7 @@ Implementation and qualification work is tracked in the [GitHub project](https:/
 - [Device gateway](https://github.com/opensimgear/device-gateway): gateway CAN/CDC/HID implementation and electronics.
 - [Device template](https://github.com/opensimgear/device-template): generic Cyphal device with direct USB input ownership.
 - [Firmware common](https://github.com/opensimgear/firmware-common): reusable acquisition and USB code; pinned protocol source dependency.
-- [Cockpit](https://github.com/opensimgear/cockpit): native host adapters, controller registration and module configuration/calibration UI.
+- [Cockpit](https://github.com/opensimgear/cockpit): native host adapters, device lifecycle and module configuration/calibration UI.
 - [Website](https://github.com/opensimgear/opensimgear.github.io): architecture and user documentation.
 
 ## Licensing
