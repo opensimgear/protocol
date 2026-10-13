@@ -4,7 +4,9 @@ The work-in-progress configuration flow uses the same portable module handlers
 on the STM32 target and in the native firmware emulator. Cockpit talks to the
 gateway's correlated CDC console; the gateway forwards bounded command and reply
 chunks over Cyphal to the identified module. Direct module CDC uses the same
-configuration handler.
+configuration handler. Temporary device outputs use the separate
+[device-advertised action handler](device-actions.md) carried by the same bounded
+transport; actions do not claim or persist configuration.
 
 ## Configuration and ownership
 
