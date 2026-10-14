@@ -4,8 +4,8 @@ Panel events preserve debounced mapped-button transitions between Cockpit reads.
 They use the portable `opensimgear/events.h` implementation and the production
 profile's logical button indexes, rather than sampling the gateway's latest HID
 report. Acquisition runs independently of direct USB ownership, controller
-enablement, CAN input acknowledgements and the USB encoder pulse queue. Axes and
-hats are outside this event contract.
+enablement, CAN input acknowledgements and the USB encoder pulse queue. Hats
+remain outside this contract; calibrated axis snapshots are described below.
 
 Direct module CDC accepts:
 
