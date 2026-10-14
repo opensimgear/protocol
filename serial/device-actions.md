@@ -3,8 +3,9 @@
 Actions describe and operate temporary device outputs through a shared portable C
 handler. Cockpit discovers the catalogue and presents manual controls from its
 metadata. The generic device supports its physical board LED mode plus simulated
-RGB and boolean LEDs in the native emulator. DCS-BIOS bindings and panel input
-events are later milestones; this API supplies their reusable output foundation.
+RGB and boolean LEDs in the native emulator. The Master Caution simulation
+profile instead advertises the same board LED action. [Panel input events](panel-input-events.md)
+supply the independent input contract used with these outputs by simulator bindings.
 
 Actions do not require a settings writer claim, change HID descriptors or write
 flash. Device callbacks retain hardware ownership, apply values and report the
@@ -170,4 +171,4 @@ Cockpit binds a manual request to gateway identity, module identity and boot;
 it validates the complete catalogue and types before serializing arguments.
 After reconnect or reboot it discards stale results, reloads the catalogue and
 reads current state. Manual actions remain available for online disabled/direct
-USB modules. No simulator owns these outputs in this milestone.
+USB modules. Manual controls and simulator bindings use the same descriptors and typed invocation contract; binding lifecycle behavior is defined by the host application.

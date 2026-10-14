@@ -44,6 +44,7 @@ cockpit <id> <epoch> forget <32-hex-module-identity>
 cockpit <id> <epoch> update-profile <32-hex-module-identity>
 cockpit <id> <epoch> config <32-hex-module-identity> <module-boot> <child-command>
 cockpit <id> <epoch> action <32-hex-module-identity> <module-boot> <child-command>
+cockpit <id> <epoch> events <32-hex-module-identity> <module-boot> <child-command>
 ```
 
 There is no register/save/apply onboarding. Update-profile is the explicit action
@@ -54,6 +55,8 @@ session guards and Apply/Save/Discard semantics. Action child commands use the
 [device action grammar](device-actions.md), without configuration claims or
 persistence. The reply snapshot adds `targetAction` for actions and `targetConfig`
 for settings; both are request-scoped.
+Panel input reads use the [bounded event grammar](panel-input-events.md), return
+request-scoped `targetEvents` and do not consume or acknowledge HID input.
 
 An accepted lifecycle command can acknowledge staging before persistence and
 USB publication finish. Clients observe subsequent snapshots and recover the

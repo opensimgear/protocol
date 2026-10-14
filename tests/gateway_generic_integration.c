@@ -371,6 +371,7 @@ static void offline_registry_test(fixture_t *f) {
     assert(osg_gateway_identity_equal(&rebooted.active.slots[entry].identity,&f->client.identity));
 }
 void multi_device_integration_test(void);
+void panel_events_integration_test(void);
 int main(void) {
     fixture_t f;init(&f);enroll_maximum_profile(&f);
     encoder_completion_test(&f);ownership_and_stale_lease_test(&f);offline_registry_test(&f);
@@ -380,5 +381,6 @@ int main(void) {
     osg_cyphal_destroy(&f.gateway_transport);
     disabled_encoder_rearm_test();
     multi_device_integration_test();
+    panel_events_integration_test();
     return 0;
 }
