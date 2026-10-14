@@ -57,6 +57,11 @@ persistence. The reply snapshot adds `targetAction` for actions and `targetConfi
 for settings; both are request-scoped.
 Panel input reads use the [bounded event grammar](panel-input-events.md), return
 request-scoped `targetEvents` and do not consume or acknowledge HID input.
+Additive event metadata identifies maintained controls, encoder pairs and selector
+positions, plus independent normalized axis snapshots/availability. String setter
+actions can advertise actual display geometry/encoding. Both retain schema 1 and
+the same route/envelope limits; consumers require those capabilities before
+offering the corresponding simulator bindings.
 
 An accepted lifecycle command can acknowledge staging before persistence and
 USB publication finish. Clients observe subsequent snapshots and recover the

@@ -7,3 +7,10 @@ The generic module's direct USB console provides diagnostics and `config <child-
 Gateway routes bind gateway identity, module identity and current session; node IDs are chain-local. A physical socket is not an address on the gateway's single shared bus. Missing integration work is tracked in the [GitHub project](https://github.com/orgs/opensimgear/projects/2).
 
 [Panel input events](panel-input-events.md) preserve mapped button press/release and encoder-detent transitions in a bounded, nonconsuming log. The separate `events` handler shares the guarded CAN envelopes and uses explicit stream/cursor baselines independently of HID delivery.
+
+Additive schema-1 metadata identifies maintained contacts, encoder pairs and
+selector triples, and supplies independently calibrated axis snapshots with
+sensor availability. [Display actions](device-actions.md#bounded-display-surfaces)
+declare endpoint geometry/encoding and cell/byte limits on readable string
+setters. The sealed configuration envelopes and CAN application version stay
+unchanged; host bindings validate catalogue interfaces before sending commands.

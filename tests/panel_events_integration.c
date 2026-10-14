@@ -11,12 +11,30 @@ typedef struct {
     osg_runtime_config_t runtime;
     osg_events_t events;
     osg_profile_sample_t sample;
+    osg_actions_t actions;
+    char display[64];unsigned display_writes;
     char response[OSG_GW_CONFIG_RESPONSE_CAPACITY];
     uint16_t received,total;
     uint32_t now,request;
 } fixture_t;
-static const osg_profile_button_t button={.input=0};
-static const osg_profile_t panel={.name="Master Caution",.buttons=&button,.button_count=1};
+static const osg_profile_button_t buttons[]={ {.input=0}, {.input=1,.maintained=true} };
+static const osg_profile_encoder_t encoder={.a=2,.b=3};
+static const osg_profile_selector_t selector={.low=4,.high=5};
+static const osg_profile_axis_t axis={.channel=0,.usage=0x30,.minimum=100,.maximum=3900,.neutral=32768};
+static const osg_profile_t panel={.name="Master Caution",.buttons=buttons,.button_count=1};
+static const osg_profile_t radio={.name="Radio",.buttons=buttons,.button_count=2,.encoders=&encoder,.encoder_count=1,
+    .selectors=&selector,.selector_count=1,.axes=&axis,.axis_count=1};
+static void transform(void *context,const osg_profile_state_t *state,uint8_t *report) {
+    osg_runtime_transform_report(context,state,report);
+}
+static bool display_write(void *context,const char *id,const osg_action_value_t *values,size_t count) {
+    fixture_t *f=context;assert(!strcmp(id,"d.txt") && count==1);
+    strcpy(f->display,values[0].value.text);f->display_writes++;return true;
+}
+static bool display_read(void *context,const char *id,osg_action_value_t *values,size_t count) {
+    fixture_t *f=context;assert(!strcmp(id,"d.txt") && count==1);
+    values[0].type=OSG_ACTION_STRING;strcpy(values[0].value.text,f->display);return true;
+}
 static bool gateway_send(void *context,const osg_gateway_frame_t *frame) {
     fixture_t *f=context;
     (void)osg_can_client_receive(&f->client,frame,f->now);return true;
@@ -33,12 +51,25 @@ static bool module_send(void *context,const osg_gateway_frame_t *frame) {
 }
 static void request(fixture_t *f,uint32_t id,const char *command) {
     f->request=id;f->received=f->total=0;
+    /* The real gateway renews the same assigned lease periodically. Larger
+     * metadata/pages advance this fixture beyond the assignment timeout. */
+    osg_gateway_message_t assignment={.type=OSG_GW_ASSIGN,.identity=f->client.identity,
+        .node=1,.lease=2,.gateway_epoch=9,.boot_session=7};
+    assert(osg_cyphal_send(&f->gateway,&assignment,++f->now));
     osg_gateway_message_t message={.type=OSG_GW_CONFIG_REQUEST,.identity=f->client.identity,
         .node=1,.lease=2,.gateway_epoch=9,.boot_session=7,.sequence=id,
-        .config_total=(uint16_t)strlen(command),.config_length=(uint8_t)strlen(command)};
-    assert(strlen(command)<=OSG_GW_CONFIG_CHUNK_SIZE);memcpy(message.config_data,command,message.config_length);
-    assert(osg_cyphal_send(&f->gateway,&message,++f->now));
+        .config_total=(uint16_t)strlen(command)};
+    assert(strlen(command)<OSG_GW_CONFIG_COMMAND_CAPACITY);
+    for(unsigned offset=0;offset<strlen(command);offset+=OSG_GW_CONFIG_CHUNK_SIZE) {
+        unsigned remaining=(unsigned)strlen(command)-offset;
+        message.config_offset=(uint16_t)offset;
+        message.config_length=(uint8_t)(remaining>OSG_GW_CONFIG_CHUNK_SIZE?OSG_GW_CONFIG_CHUNK_SIZE:remaining);
+        memcpy(message.config_data,command+offset,message.config_length);
+        assert(osg_cyphal_send(&f->gateway,&message,++f->now));
+    }
     for(unsigned i=0;i<256 && (f->handler.responding || !f->received);i++) osg_module_config_can_tick(&f->handler,++f->now);
+    if(!f->received || f->received!=f->total || strncmp(f->response,"OK\n",3))
+        fprintf(stderr,"request %u %s: received=%u total=%u now=%u node=%u response=%s\n",id,command,f->received,f->total,f->now,f->client.node,f->response);
     assert(f->received && f->received==f->total && !strncmp(f->response,"OK\n",3));
 }
 static void press(fixture_t *f,bool held) {
@@ -70,6 +101,31 @@ void panel_events_integration_test(void) {
     assert(osg_events_init(&f.events,&panel,&f.sample,f.now,2));
     request(&f,5,"events read 1 82");assert(strstr(f.response,"staleStream"));
     request(&f,6,"events state");assert(strstr(f.response,"\"stream\":2,\"head\":0"));
+    assert(osg_events_init(&f.events,&radio,&f.sample,f.now,3));
+    f.client.profile=(osg_gateway_profile_t){.button_count=7,.axis_count=1,.axis_usage={0x30},.axis_neutral={32768},.revision=1};
+    f.runtime.active.axis_count=1;f.runtime.active.axes[0]=axis;
+    f.runtime.active.axis_options[0].inverted=true;f.runtime.active.axis_options[0].deadzone=1000;
+    osg_events_set_transform(&f.events,transform,&f.runtime);
+    f.sample.axes_fresh=1;f.sample.axes[0]=100;
+    osg_events_observe(&f.events,&f.sample,++f.now);
+    request(&f,7,"events state");
+    assert(strstr(f.response,"\"contactButtonCount\":2,\"maintainedButtons\":[1],\"selectorButtons\":[[4,5,6]]"));
+    assert(strstr(f.response,"\"axisCount\":1,\"axisUsage\":[48],\"axisNeutral\":[32768],\"axes\":[65535],\"axisAvailable\":[true]"));
+    f.sample.axes_fresh=0;osg_events_observe(&f.events,&f.sample,f.now+=101);
+    request(&f,8,"events state");assert(strstr(f.response,"\"axes\":[32768],\"axisAvailable\":[false]"));
+    static const osg_action_parameter_t text={.id="text",.label="Text",.type=OSG_ACTION_STRING,.max_bytes=7};
+    static const osg_action_display_t display={.columns=7,.rows=1,.encoding=OSG_ACTION_DISPLAY_ASCII};
+    static const osg_action_descriptor_t descriptor={.id="d.txt",.label="Frequency",.endpoint="radio.frequency",
+        .semantics=OSG_ACTION_SETTER,.readable=true,.parameters=&text,.parameter_count=1,.display=&display};
+    assert(osg_actions_init(&f.actions,&descriptor,1,1,display_write,display_read,&f));
+    osg_module_config_can_actions(&f.handler,&f.actions);
+    request(&f,9,"action describe 0");assert(strstr(f.response,"\"display\":{\"columns\":7,\"rows\":1,\"encoding\":\"ascii\"}"));
+    request(&f,10,"action invoke 1 d.txt 3132332E343530");assert(strstr(f.response,"\"values\":[\"123.450\"]"));
+    assert(f.display_writes==1 && !strcmp(f.display,"123.450"));
+    request(&f,10,"action invoke 1 d.txt 3132332E343530");assert(f.display_writes==1);
+    request(&f,11,"action invoke 1 d.txt C2A3");assert(strstr(f.response,"invalidArgument") && f.display_writes==1);
+    request(&f,12,"action state");assert(strstr(f.response,"123.450"));
+    assert(!f.runtime.owner && !f.runtime.pending_apply);
     osg_cyphal_destroy(&f.client.cyphal);osg_cyphal_destroy(&f.gateway);
-    puts("PASS: panel press/release through sealed CAN event envelopes; immutable retry, direct USB, bounded pages/gaps and stream activation");
+    puts("PASS: panel events, calibrated axis snapshots and bounded ASCII display setters through sealed CAN envelopes; immutable retries, direct USB and stream activation");
 }

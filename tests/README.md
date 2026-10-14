@@ -58,6 +58,15 @@ activation and rejects stale-stream reads. Settings are not claimed or mutated
 by reads. The Master Caution native/board profiles share logical control 0 and
 `led.status.set_mode`; physical validation remains deferred.
 
+The same fixture now transports additive contact/selector/axis metadata, applies
+the real runtime calibration transform to its independent axis report, verifies
+inverted endpoints and stale neutral/availability, and fragments complete ASCII
+display setters through the sealed command envelope. It checks declared geometry,
+rejected encoding, readable display state and immutable invocation retries.
+Assignments renew through the real CAN transport while the larger fixture runs.
+Common native tests separately exercise UTF-8 scalar/cell/byte bounds and maximum
+metadata/page sizing. None of these software tests establish physical displays.
+
 The same runner also executes `multi_device_integration.c`: ten independent real
 device CAN clients broadcast through a deterministic frame queue to one actual
 gateway core and transport. Fault injection selects a sender and Cyphal subject,
