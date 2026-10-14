@@ -85,7 +85,10 @@ records `failed`; an explicit release returns `fallbackFailed`. The device does
 not later retry an old fallback over a new owner's output.
 
 Direct USB disconnect invalidates USB-scoped leases. CAN assignment/source,
-boot/epoch/lease route changes invalidate CAN-scoped leases. Losing one transport
+boot/epoch/lease route changes and local route resets invalidate CAN-scoped leases.
+A module-local route generation detects timeout/reset even if reassignment repeats
+the same wire IDs; it also invalidates pre-reset request assembly/reply caches.
+Pure USB input ownership handoff does not change this generation. Losing one transport
 does not release another transport's endpoints. A silent loss still expires at
 TTL. Reboot clears all claims and restores the product's volatile output defaults.
 The Pico debug gateway's virtual device bus uses CAN scope and invalidates it on

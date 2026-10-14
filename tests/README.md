@@ -231,3 +231,9 @@ A zero-input nonzero-revision profile is valid but has no valid Input report.
 Shared and product native suites separately cover TTL bounds, callback failures,
 output-only CDC topology and registry/controller transitions. No physical device
 or live-game qualification is implied.
+
+Integration CI selects immutable device/gateway commits from the same contract
+milestone, then resolves their identical firmware-common pin. Updating one
+component requires checking both sealed Cyphal snapshots and matching common
+revisions before publication; mixing older M3 firmware with M4 canonical source
+is rejected before compilation.
