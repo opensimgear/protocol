@@ -129,9 +129,12 @@ transport reply. There is no new DSDL subject or protocol-version change.
 A valid nonzero profile revision with zero buttons, axes and hats advertises an
 output-only module. Axis usage/neutral tails remain zero. Ordinary discovery and
 application Status establish its guarded configuration/action/event route, but
-it sends no Input reports and requires no InputAck. The gateway remembers it with
-`enabled:false`, `reportId:null`, `descriptorIndex:null`, `published:false` and
-`outputOnly:true`. It allocates no HID report ID or controller order. `Enable`
+it sends no Input reports and requires no InputAck. Its stored registry slot uses
+report ID `0` and order `255`, reserving neither a HID report ID nor controller
+position. The raw CDC inventory reports `enabled:false`, `reportId:null`,
+`descriptorIndex:-1`, `published:false` and `outputOnly:true`, consistent with the
+[gateway CDC contract](stm32-gateway-v3.md). Cockpit normalizes the unpublished
+descriptor index to `null` in its device model. `Enable`
 returns `input_not_supported`. Inventory/settings persistence may occur; an
 unchanged controller descriptor activates without a USB reconnect.
 
