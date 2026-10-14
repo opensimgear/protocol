@@ -141,8 +141,12 @@ when controller counts change or a zero-controller placeholder disappears.
 Changing the accepted logical route bound to 32 requires matching device and
 gateway application helpers; the DSDL field remains uint8 and does not change.
 Canonical transport snapshots in both firmware repositories are hash-checked.
-The Pico protocol-1 demo remains a separate adapter with its own behavior and
-capacity; it does not prove production STM32 Windows enumeration.
+The Pico protocol-1 demo remains a legacy adapter with its own behavior/capacity.
+The current [Pico debug target](https://github.com/opensimgear/device-gateway/tree/main/simulation/pico)
+uses these lifecycle/configuration/action/event contracts with a distinct
+`pico-debug-gateway` role, preserved USB serial and guarded debug injection.
+Its internal application-message bus and physical Pico USB do not qualify CAN
+electrical behavior or STM32 Windows enumeration.
 
 Canonical CDC v3 fixtures come from the gateway's C formatter and are consumed
 by Cockpit's native tests. Native simulations exercise production handlers but

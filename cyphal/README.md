@@ -40,7 +40,7 @@ and Status. The pool is still bounded: simultaneous configuration/session traffi
 can create additional pressure, so 32 routes is a software capacity rather than
 a measured aggregate throughput guarantee. The bounded configuration envelopes
 also carry [device actions](https://github.com/opensimgear/protocol/blob/main/serial/device-actions.md), selected by the `action `
-command prefix, and [panel input events](https://github.com/opensimgear/protocol/blob/main/serial/panel-input-events.md) selected by `events `. No new subjects or sealed DSDL edits are required. Application
+command prefix (including [endpoint leases and output-only devices](https://github.com/opensimgear/protocol/blob/main/serial/output-ownership.md)), and [panel input events](https://github.com/opensimgear/protocol/blob/main/serial/panel-input-events.md) selected by `events `. No new subjects or sealed DSDL edits are required. Application
 Status provides route proof even when HID input is disabled or direct USB owned.
 Additive action metadata also describes bounded display geometry/encoding;
 event replies include typed contact/selector mappings and independent calibrated

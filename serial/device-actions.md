@@ -7,7 +7,9 @@ RGB and boolean LEDs in the native emulator. The Master Caution simulation
 profile instead advertises the same board LED action. [Panel input events](panel-input-events.md)
 supply the independent input contract used with these outputs by simulator bindings.
 
-Actions do not require a settings writer claim, change HID descriptors or write
+Devices may advertise [exclusive endpoint leases](output-ownership.md) with validated
+fallbacks, independent expiry and owned invocation. Legacy setters and LED diagnostics
+respect a claimed endpoint. Actions do not require a settings writer claim, change HID descriptors or write
 flash. Device callbacks retain hardware ownership, apply values and report the
 current software state. A successful reply confirms callback application; it does
 not measure the electrical LED/display. LED overrides reset to `auto` on device

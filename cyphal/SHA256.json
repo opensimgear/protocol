@@ -1,6 +1,6 @@
 {
   "CMakeLists.txt": "31864a298fce375b2b242e97e55715149aa2a45c7a4f46b749cce7548d300ebd",
-  "README.md": "340bacbe7ef9addea53a19bc4cb3b5ab5511648a1589d7624930c4af8bf7b158",
+  "README.md": "ca1ac96c5ce12e44db25463f713c64582357eb755be0fe754f1f171f5a4188f8",
   "generated/NUNAVUT_LICENSE.rst": "bdc20930a8147279ac9eecd09d86e857be370493814cbae20b1483108169410f",
   "generated/nunavut/support/serialization.h": "40f243798a9da5adfe9e681f2996d783613fea35bf5df3e4fa8660f60a46410e",
   "generated/opensimgear/input/Announce_1_0.h": "74ae6b4e33a57405bb0088699f770769b419de877e39a058a08ef5b725c26fdd",
@@ -19,7 +19,7 @@
   "include/opensimgear/cyphal.h": "10f70165468e10f32604f97188ed32978efacebd4703704ad2c182a463fd4874",
   "include/opensimgear/gateway_protocol.h": "66d2242b5cd3096396c33bd320e1e283bf75e50c068ead2d5e655dc6f32f7301",
   "src/cyphal.c": "7f7f75baa74ec2fcb370211e414ee1b52bb2fea2a73692a4a2c30a7cebbcc518",
-  "src/gateway_protocol.c": "4fe03d596543d9f83e3892d433e1c3fca0a2878236cfdbcd1fee31df3d71615d",
+  "src/gateway_protocol.c": "8ee36fbad62f5aa5dfb7fb418eb612b1ed6ea872f3ba77b980ae3bab9cadc1bb",
   "tests/transport_test.c": "e4a53fe86e2686322c2a76cfd75ea1d08c27095d1af750d22afd8ba70dc3118a",
   "tools/generate.py": "1a7ff093672aeb3aa1aa3841d1ac9c4da2d21723d711c873d2dd233c15d796c7",
   "tools/requirements.txt": "345c474a64242ebc990684ada5938f71e955d21cf91affd1294502a8aff25b55",

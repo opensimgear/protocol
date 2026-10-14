@@ -118,6 +118,7 @@ void panel_events_integration_test(void) {
     static const osg_action_descriptor_t descriptor={.id="d.txt",.label="Frequency",.endpoint="radio.frequency",
         .semantics=OSG_ACTION_SETTER,.readable=true,.parameters=&text,.parameter_count=1,.display=&display};
     assert(osg_actions_init(&f.actions,&descriptor,1,1,display_write,display_read,&f));
+    assert(osg_actions_enable_ownership(&f.actions));
     osg_module_config_can_actions(&f.handler,&f.actions);
     request(&f,9,"action describe 0");assert(strstr(f.response,"\"display\":{\"columns\":7,\"rows\":1,\"encoding\":\"ascii\"}"));
     request(&f,10,"action invoke 1 d.txt 3132332E343530");assert(strstr(f.response,"\"values\":[\"123.450\"]"));
@@ -125,7 +126,31 @@ void panel_events_integration_test(void) {
     request(&f,10,"action invoke 1 d.txt 3132332E343530");assert(f.display_writes==1);
     request(&f,11,"action invoke 1 d.txt C2A3");assert(strstr(f.response,"invalidArgument") && f.display_writes==1);
     request(&f,12,"action state");assert(strstr(f.response,"123.450"));
+    request(&f,13,"action claim 1 d.txt 00112233-4455-6677-8899-aabbccddeeff 5000 -");
+    assert(strstr(f.response,"\"leaseId\":1") && f.display_writes==1);
+    uint32_t expiry=f.actions.leases[0].expires_at;
+    request(&f,13,"action claim 1 d.txt 00112233-4455-6677-8899-aabbccddeeff 5000 -");
+    assert(f.actions.leases[0].expires_at==expiry && f.display_writes==1);
+    char direct[OSG_ACTION_REPLY_CAPACITY];
+    assert(osg_actions_command_at(&f.actions,"action invoke 1 d.txt 393939",++f.now,OSG_ACTION_SCOPE_USB,direct,sizeof direct));
+    assert(strstr(direct,"outputBusy") && f.display_writes==1);
+    request(&f,14,"action invoke_owned 00112233-4455-6677-8899-aabbccddeeff 1 1 d.txt 3235312e303030");
+    assert(strstr(f.response,"251.000") && f.display_writes==2);
+    request(&f,14,"action invoke_owned 00112233-4455-6677-8899-aabbccddeeff 1 1 d.txt 3235312e303030");assert(f.display_writes==2);
+    request(&f,15,"action renew 00112233-4455-6677-8899-aabbccddeeff 1 5000");expiry=f.actions.leases[0].expires_at;
+    request(&f,15,"action renew 00112233-4455-6677-8899-aabbccddeeff 1 5000");assert(f.actions.leases[0].expires_at==expiry);
+    request(&f,16,"action ownership 0");assert(strstr(f.response,"\"owned\":true") && !strstr(f.response,"00112233-4455"));
+    /* Expiry applies the callback even if neither HID nor action requests run. */
+    f.now=expiry;osg_module_config_can_tick(&f.handler,f.now);
+    assert(!f.actions.leases[0].owned && !f.display[0] && f.display_writes==3);
+    request(&f,17,"action ownership 0");assert(strstr(f.response,"\"fallbackStatus\":\"applied\""));
+    request(&f,18,"action claim 1 d.txt 00112233-4455-6677-8899-aabbccddeeff 5000 -");
+    request(&f,19,"action invoke_owned 00112233-4455-6677-8899-aabbccddeeff 2 1 d.txt 3235312e303030");
+    f.client.lease++;osg_module_config_can_tick(&f.handler,++f.now);
+    assert(!f.actions.leases[0].owned && !f.display[0] && f.display_writes==5);
+    osg_gateway_profile_t output_only={.revision=1};
+    assert(osg_gateway_profile_valid(&output_only) && !osg_gateway_profile_report_valid(&output_only,(uint8_t[OSG_GW_MAX_REPORT_SIZE]){0}));
     assert(!f.runtime.owner && !f.runtime.pending_apply);
     osg_cyphal_destroy(&f.client.cyphal);osg_cyphal_destroy(&f.gateway);
-    puts("PASS: panel events, calibrated axis snapshots and bounded ASCII display setters through sealed CAN envelopes; immutable retries, direct USB and stream activation");
+    puts("PASS: panel events, calibrated axis snapshots and bounded ASCII display setters through sealed CAN envelopes; endpoint leases, immutable retries, direct USB and stream activation");
 }
