@@ -48,7 +48,7 @@ void osg_gateway_identity_format(const osg_gateway_identity_t *id,char out[33]) 
 }
 bool osg_gateway_profile_valid(const osg_gateway_profile_t *p) {
     if(!p || p->button_count>OSG_GW_MAX_BUTTONS || p->axis_count>OSG_GW_MAX_AXES ||
-       p->hat_count>OSG_GW_MAX_HATS || (!p->button_count && !p->axis_count && !p->hat_count) || !p->revision) return false;
+       p->hat_count>OSG_GW_MAX_HATS || !p->revision) return false;
     uint16_t seen=0;
     for(unsigned i=0;i<8;i++) {
         if(i>=p->axis_count) {

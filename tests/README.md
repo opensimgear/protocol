@@ -221,3 +221,13 @@ replayed twice. Device/gateway shared-Cyphal copies remain byte-identical to
 canonical sources. The common event collector also passes native bounds and
 recovery tests with 99.14% line coverage. Software interoperability does not
 establish electrical button capture, physical CAN or bench qualification.
+
+The panel/action integration fixture also enables endpoint ownership through real
+sealed CAN request/response fragments. It proves claim stores fallback without a
+driver write, immutable claim/renew retries do not extend TTL, owned setters apply
+once, a competing direct USB setter is rejected, public status hides secrets and
+independent expiry/current-route loss clears the claim and applies exact fallback.
+A zero-input nonzero-revision profile is valid but has no valid Input report.
+Shared and product native suites separately cover TTL bounds, callback failures,
+output-only CDC topology and registry/controller transitions. No physical device
+or live-game qualification is implied.
