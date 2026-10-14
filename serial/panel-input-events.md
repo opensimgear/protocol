@@ -59,6 +59,59 @@ pair on the corresponding control. Its `held` value stays false. These records
 represent detents, not acknowledgement-paced HID pulses; stalled HID cannot
 consume or delay them.
 
+## Input kinds and calibrated axis snapshots
+
+Schema 1 now has additive capability/snapshot fields in both `state` and `read`:
+
+```json
+{"ok":true,"schemaVersion":1,"stream":3,"head":1,"oldest":1,"overflow":0,"buttonCount":7,"held":[false,false,false,false,false,true,false],"encoderButtons":[2,3],"contactButtonCount":2,"maintainedButtons":[1],"selectorButtons":[[4,5,6]],"axisCount":1,"axisUsage":[48],"axisNeutral":[32768],"axes":[32768],"axisAvailable":[true],"sampledAtMs":1000}
+```
+
+`contactButtonCount` is the number of declared contact buttons, before encoder
+pairs and selector triples. `maintainedButtons` lists the unique maintained
+logical indexes within that range; the other contact buttons are momentary.
+The existing `encoderButtons` are consecutive positive/negative pairs in encoder
+order. `selectorButtons` lists consecutive `[low,center,high]` triples in selector
+order after encoders. Counts and these indexes must account for the entire
+`buttonCount` layout. There are at most 128 total logical controls, eight encoders
+and eight selectors. This metadata distinguishes maintained state/selector
+positions from momentary presses and encoder detents without reinterpreting the
+existing boolean event records.
+
+`axisCount` is 0–8. `axisUsage`, `axisNeutral`, `axes` and `axisAvailable` each have
+that length in declared **logical axis order**, rather than physical ADC channel
+order. Usages are the profile's unique HID axis codes 0x30–0x38; neutral and
+current values are unsigned 16-bit numbers. The device independently acquires
+axes with its active profile's minimum/maximum scaling and then applies its
+runtime inversion/deadzone. It uses the same production calibration operation,
+with a separate always-active report, even with direct USB or HID disabled.
+Products register the common event report-transform callback after each mapping
+activation; no HID report or delivery acknowledgement supplies these values.
+
+Fresh valid ADC samples set availability true. A missing/invalid sample retains
+the previous value only until the 100 ms sensor watchdog expires; it then returns
+the declared neutral with availability false. Initialization starts neutral and
+unavailable. `sampledAtMs` is the latest collector observation's module-local u32
+millisecond clock and may wrap; it is neither a sequence nor a host timestamp.
+It does not imply that every sensor supplied a new sample. Availability carries
+the per-axis sensor freshness verdict. Route/boot/stream validation and request
+correlation still determine whether a reply belongs to the current device.
+
+Axis values are **snapshots**, outside the 64-record ring: intermediate movement
+is intentionally coalesced and does not advance `head` or `overflow`. Consumers
+use the latest available state for a catalogue-validated absolute `set_state`
+binding, scale to that interface's advertised `max_value`, and suppress unchanged
+values. They must not turn an unavailable neutral into a live axis command.
+Encoder detents and button edges retain their ordered nonconsuming semantics;
+they must not be collapsed into absolute snapshots or blindly retried.
+
+Older schema-1 firmware may omit all these additive fields. Existing momentary
+bindings continue to use their original contract; clients require the new fields
+for typed switch, selector or axis bindings and do not guess from board names.
+The maximum 128-button/eight-axis page remains below the existing 4091-byte JSON
+budget. No new subject, DSDL version, settings claim, flash write or HID ownership
+change is introduced.
+
 `head` is the latest sequence, initially zero. The ring retains at most 64
 records; `oldest` is the oldest retained sequence, or `head + 1` for an empty
 ring. `overflow` counts evicted records and saturates at u32 maximum. Sequences

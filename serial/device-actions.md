@@ -122,6 +122,40 @@ reject duplicate IDs and validate all metadata before presenting controls.
 A catalogue revision change invalidates cached descriptors and parameter values.
 Saved bindings in later milestones must revalidate against fresh metadata.
 
+### Bounded display surfaces
+
+A readable setter with exactly one `string` parameter may advertise optional
+`display` metadata on the action:
+
+```json
+{"id":"radio.frequency.set_text","label":"Radio frequency","endpoint":"radio.frequency","semantics":"setter","readable":true,"display":{"columns":7,"rows":1,"encoding":"ascii"},"parameters":[{"id":"text","label":"Text","type":"string","maxBytes":7}]}
+```
+
+`columns` is 1–63, `rows` is 1–4 and their product is at most 63 logical cells.
+Encoding is `ascii` or `utf8`; `maxBytes` retains its independent 1–63 byte bound
+and must be at least the cell count. ASCII accepts printable U+0020–U+007E,
+one byte per cell. UTF-8 uses **one Unicode scalar per logical cell**; combining
+marks and wide glyphs do not receive special width treatment. The hardware
+callback owns font/repertoire support, and a device should advertise ASCII when
+that matches its character interface. A label's UTF-8 encoding does not imply
+its output accepts those characters.
+
+One invocation assigns the whole surface in row-major order. No newline or other
+control character marks a row; clients format/pad rows with spaces, then flatten
+them. Empty/short values are valid but still mean a complete desired surface,
+not a partial-write operation. Host formatting must satisfy both cell and byte
+budgets, truncate only on scalar boundaries and define its ASCII replacement
+policy. The shared handler validates input before the callback and validates
+readback against the same geometry/encoding. Success describes applied software
+state, not electrical display verification or observed pixels.
+
+This is additive schema-1 metadata. Older consumers may ignore it and still
+invoke bounded string actions; newer bindings require fresh display metadata
+before relying on dimensions. An absent `display` retains the original UTF-8
+string contract. Product descriptors come from actual output-port capabilities;
+an LED-only board must not advertise an unwired display. Device-specific action
+IDs, catalogue revisions and callbacks remain product-owned.
+
 ## State and invocation replies
 
 `state` includes one entry for each readable action; `values` uses the descriptor's

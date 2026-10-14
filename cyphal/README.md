@@ -42,6 +42,9 @@ a measured aggregate throughput guarantee. The bounded configuration envelopes
 also carry [device actions](https://github.com/opensimgear/protocol/blob/main/serial/device-actions.md), selected by the `action `
 command prefix, and [panel input events](https://github.com/opensimgear/protocol/blob/main/serial/panel-input-events.md) selected by `events `. No new subjects or sealed DSDL edits are required. Application
 Status provides route proof even when HID input is disabled or direct USB owned.
+Additive action metadata also describes bounded display geometry/encoding;
+event replies include typed contact/selector mappings and independent calibrated
+axis snapshots. These application JSON additions use the same sealed envelopes.
 
 Call `tick` every main-loop iteration and whenever the driver can accept more frames.
 All receive/send/tick operations must share one serialized execution context.
