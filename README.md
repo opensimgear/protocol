@@ -65,4 +65,4 @@ Implementation and qualification work is tracked in the [GitHub project](https:/
 
 ## Licensing
 
-No OpenSimGear license grant is implied for newly authored definitions or reference code. Production protocol, firmware and hardware releases require documented licensing and compatible USB identifiers.
+Copyright © Ivan Gregurić Ortolan. All rights reserved for original OpenSimGear material while licensing is under review. The [temporary licensing policy](LICENSE) defines the current scope. Creative external contributions are suspended during review; [CONTRIBUTING.md](CONTRIBUTING.md) explains the policy for factual bug reports and questions. Third-party material retains its existing licenses and notices. Production protocol, firmware and hardware releases also require compatible USB identifiers.
