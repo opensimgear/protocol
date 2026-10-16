@@ -1,5 +1,9 @@
 # OpenSimGear protocol
 
+## Development status and disclaimer
+
+This project is heavily under development and is not ready for use. Use it entirely at your own risk. To the fullest extent permitted by applicable law, the authors and contributors disclaim all liability for any damage, loss, or other issues arising from its use.
+
 Shared wire contracts, generated DSDL and conformance checks for OpenSimGear firmware and Cockpit. The STM32 gateway and generic device use **Cyphal/CAN**, with a separate gateway CDC v3 API for Cockpit. The CAN application contract remains version 3; the replaced private CAN FD v2 codec remains as a historical reference.
 
 This is work in progress ahead of going live. Existing contract identifiers describe the current implementation; no production release is declared.

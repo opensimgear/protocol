@@ -1,5 +1,9 @@
 # Shared Cyphal firmware library
 
+## Development status and disclaimer
+
+This project is heavily under development and is not ready for use. Use it entirely at your own risk. To the fullest extent permitted by applicable law, the authors and contributors disclaim all liability for any damage, loss, or other issues arising from its use.
+
 This self-contained C11 library is used by both gateway and generic device firmware.
 It embeds pinned libcanard 5.0, checked-in Nunavut 2.3.1 C bindings, and the common
 application profile/identity helpers. CMake target `osg_cyphal` exports its include

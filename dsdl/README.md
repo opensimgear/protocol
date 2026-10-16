@@ -1,5 +1,9 @@
 # Canonical Cyphal application definitions
 
+## Development status and disclaimer
+
+This project is heavily under development and is not ready for use. Use it entirely at your own risk. To the fullest extent permitted by applicable law, the authors and contributors disclaim all liability for any damage, loss, or other issues arising from its use.
+
 Application contract 3 uses the `opensimgear.input` 1.0 DSDL definitions here.
 They preserve stable 128-bit hardware identity, nonzero boot sessions and leases,
 the gateway epoch, application sequence, direct-USB ownership and exact HID input

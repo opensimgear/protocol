@@ -1,5 +1,9 @@
 # Private CAN FD prototype v2
 
+## Development status and disclaimer
+
+This project is heavily under development and is not ready for use. Use it entirely at your own risk. To the fullest extent permitted by applicable law, the authors and contributors disclaim all liability for any damage, loss, or other issues arising from its use.
+
 This reviewed codec snapshot is used by the gateway and generic-device firmware.
 It is a prototype interoperability contract, not a Cyphal release. V1 peers are
 incompatible; update gateway and devices together. The C codec is vendored into
