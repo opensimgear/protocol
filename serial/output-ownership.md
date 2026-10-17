@@ -4,7 +4,7 @@ Devices that enable the shared ownership handler advertise this additive field o
 successful catalogue/state/invoke and lease replies:
 
 ```json
-"ownership": {"schemaVersion": 1, "scope": "endpoint", "maxLeaseMs": 5000, "restorePolicy": "if-unchanged"}
+"ownership": {"schemaVersion": 1, "scope": "endpoint", "maxLeaseMs": 5000, "restorePolicy": "if-unchanged", "fallbackPolicy": "capture-at-claim"}
 ```
 
 A host must discover this capability before claiming an output. Legacy catalogues
@@ -23,6 +23,7 @@ Direct CDC and routed CAN use the same full child commands:
 
 ```text
 action claim <catalogueRevision> <actionId> <token> <ttlMs> <fallbackArgs...>
+action claim_current <catalogueRevision> <readableSetterId> <token> <ttlMs>
 action renew <token> <leaseId> <ttlMs>
 action invoke_owned <token> <leaseId> <catalogueRevision> <actionId> <args...>
 action release <token> <leaseId>
@@ -42,7 +43,24 @@ claim on an already owned endpoint with the same token and transport scope keeps
 its ID and atomically replaces its validated fallback and expiry. Other owners
 receive `outputBusy`. A new host session uses a new token.
 
-A claim accepts only a readable setter and the same ordered, typed arguments as
+`fallbackPolicy: "capture-at-claim"` is an optional advertised capability for
+`claim_current`. A host requiring restoration of the actual prior output must
+require it explicitly. The command has no fallback arguments. In the product's
+serialized endpoint owner context, one validated read captures both fallback and
+last-owned tuple before granting the lease; it performs no output write. A host
+read followed by a legacy `claim` cannot emulate this guarantee, because another
+writer may change the output between those commands.
+
+Repeating `claim_current` with the exact live token, scope and readable setter
+keeps the lease ID and original captured fallback/last-owned tuple, extending
+only expiry. It never recaptures the run's own output or an external change.
+Switching claim mode or readable setter on an existing captured lease returns
+`outputBusy`; explicitly release/expire it before starting another claim mode.
+A legacy live claim cannot be upgraded in place. Ordinary legacy claims keep
+their previous fallback-replacement behavior. An ambiguous mutation is still
+never retried automatically.
+
+A legacy claim accepts only a readable setter and the same ordered, typed arguments as
 an invocation. The complete fallback passes range, UTF-8, display geometry and
 encoding checks before the claim changes. Claiming stores fallback without writing
 it. A claim also reads and validates the current tuple in that setter's exact
