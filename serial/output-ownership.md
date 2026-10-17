@@ -4,11 +4,15 @@ Devices that enable the shared ownership handler advertise this additive field o
 successful catalogue/state/invoke and lease replies:
 
 ```json
-"ownership": {"schemaVersion": 1, "scope": "endpoint", "maxLeaseMs": 5000}
+"ownership": {"schemaVersion": 1, "scope": "endpoint", "maxLeaseMs": 5000, "restorePolicy": "if-unchanged"}
 ```
 
 A host must discover this capability before claiming an output. Legacy catalogues
-may omit it. Claims are separate from configuration writer drafts: they are
+may omit it. `restorePolicy` is additive: endpoints advertising only the legacy
+schema/scope/TTL capability remain discoverable, but do not promise guarded
+restoration. A host requiring reversible owned Setter writes must explicitly
+require `restorePolicy: "if-unchanged"`. Claims are separate from configuration
+writer drafts: they are
 volatile, never save settings, and never change input mappings or HID descriptors.
 The fitted device callback remains the output driver. A successful readback is
 software state, not an electrical measurement.
@@ -41,23 +45,32 @@ receive `outputBusy`. A new host session uses a new token.
 A claim accepts only a readable setter and the same ordered, typed arguments as
 an invocation. The complete fallback passes range, UTF-8, display geometry and
 encoding checks before the claim changes. Claiming stores fallback without writing
-it. A lease covers the advertised physical `endpoint`, including every alias and
+it. A claim also reads and validates the current tuple in that setter's exact
+argument shape; it fails without changing ownership when that read fails. A lease
+covers the advertised physical `endpoint`, including every alias and
 one-shot action affecting that endpoint. Different endpoints can have different
 owners. Legacy `invoke` and LED diagnostic overrides are rejected only while
 their endpoint is claimed. Read-only catalogue and state requests remain allowed.
 An owned invocation validates token, lease ID, transport scope, catalogue and
-endpoint before calling the driver; it does not renew expiry.
+endpoint before calling the driver; it does not renew expiry. Successful owned
+invocations read the claimed Setter again to retain its exact last-owned tuple,
+even when the invoked action is an alias with another argument shape. A failed
+or uncertain invoke/readback invalidates restoration authority until a later
+explicit successful owned invocation or claim supplies a new validated tuple.
 
 Claim and renew reply:
 
 ```json
-{"ok":true,"schemaVersion":1,"catalogueRevision":1,"ownership":{"schemaVersion":1,"scope":"endpoint","maxLeaseMs":5000},"leaseId":7,"endpoint":"led.rgb","remainingMs":5000}
+{"ok":true,"schemaVersion":1,"catalogueRevision":1,"ownership":{"schemaVersion":1,"scope":"endpoint","maxLeaseMs":5000,"restorePolicy":"if-unchanged"},"leaseId":7,"endpoint":"led.rgb","remainingMs":5000}
 ```
 
-Release first applies and reads back the stored fallback, then replies:
+Release first compares current readable state with the lease's last confirmed
+owned tuple. Only an unchanged endpoint applies and reads back the stored
+fallback. An externally changed endpoint is relinquished without any setter
+call. The reply reports `fallbackStatus` as `applied` or `preserved`:
 
 ```json
-{"ok":true,"schemaVersion":1,"catalogueRevision":1,"ownership":{"schemaVersion":1,"scope":"endpoint","maxLeaseMs":5000},"leaseId":7,"endpoint":"led.rgb","released":true}
+{"ok":true,"schemaVersion":1,"catalogueRevision":1,"ownership":{"schemaVersion":1,"scope":"endpoint","maxLeaseMs":5000,"restorePolicy":"if-unchanged"},"leaseId":7,"endpoint":"led.rgb","released":true,"fallbackStatus":"applied"}
 ```
 
 An owned invoke uses the ordinary action result (`id` and typed `values`). The
@@ -71,15 +84,25 @@ ownership query uses `ownership` as an array, so it omits the capability object:
 and are additionally bounded by JSON bytes. Offset equal to total gives an empty
 terminal page. `actionId` identifies the setter whose fallback is retained, or
 the endpoint's first action before any claim. `fallbackStatus` is `none`,
-`applied` or `failed`; lease ID and fallback remain visible after release/expiry.
+`applied`, `preserved` or `failed`; lease ID and fallback remain visible after
+release/expiry.
 No token appears. A new claim resets this status.
 
 ## Expiry, loss and temporary overrides
 
 The device ticks leases independently of USB input ownership, HID delivery,
 acquisition, event polling and output requests. Expiry clears ownership and its
-secret, then attempts fallback once. Explicit release does the same immediately.
-An applied fallback requires the write callback to succeed and readable values
+secret, then compares current state with the last confirmed owned tuple.
+Explicit release does the same immediately. `restorePolicy: "if-unchanged"`
+requires this comparison for expiry and transport loss as well as explicit
+release: declining release at the host cannot disable a later unsafe TTL write.
+A mismatching value is preserved without invoking the fallback and reports
+`preserved`. A failed comparison read or uncertain last-owned tuple reports
+`failed` and performs no fallback write. The product serializes registry calls,
+tick, scope loss and every write to the same software endpoint in one
+non-reentrant owner context, so no other product write can interleave between
+comparison and restoration. An applied fallback requires the write callback to
+succeed and readable values
 to equal the stored fallback exactly. Failure leaves the endpoint unowned and
 records `failed`; an explicit release returns `fallbackFailed`. The device does
 not later retry an old fallback over a new owner's output.
@@ -101,7 +124,7 @@ suspends binding writes to that endpoint for a bounded timer, invokes the manual
 value with `invoke_owned`, and continues renewal. On timer completion it resumes
 the latest committed fresh provider value, or the configured fallback. A second
 client cannot bypass this by using legacy actions or LED diagnostics. If the
-host exits without releasing, independent expiry applies fallback. Manual
+host exits without releasing, independent expiry uses the same guarded restoration policy. Manual
 requests never acquire configuration drafts or write flash.
 
 The existing sealed `ConfigRequest/ConfigResponse` envelopes and guarded
