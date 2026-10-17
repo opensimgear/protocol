@@ -63,6 +63,11 @@ actions can advertise actual display geometry/encoding. Both retain schema 1 and
 the same route/envelope limits; consumers require those capabilities before
 offering the corresponding simulator bindings.
 
+The additive [volatile controller publication override](controller-publication-override.md)
+uses its own capability, atomic snapshot revision/masks and bounded native lease.
+It changes effective HID visibility without saving the temporary enabled state.
+Persistent Enable/Disable keep their existing lifecycle semantics.
+
 An accepted lifecycle command can acknowledge staging before persistence and
 USB publication finish. Clients observe subsequent snapshots and recover the
 same gateway UID after an expected reconnect, including a changed CDC path.

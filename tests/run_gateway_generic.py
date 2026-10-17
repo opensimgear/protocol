@@ -49,6 +49,8 @@ def main() -> None:
         Path(__file__).resolve().with_name("panel_events_integration.c"),
         gateway / "src/gateway.c",
         gateway / "src/gateway_layout.c",
+        gateway / "src/gateway_publication.c",
+        gateway / "shared-publication/src/publication.c",
         cyphal / "src/gateway_protocol.c",
         cyphal / "src/cyphal.c",
         cyphal / "vendor/libcanard/canard.c",
@@ -74,7 +76,7 @@ def main() -> None:
     scratch.mkdir(exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="osg-gateway-generic-", dir=scratch) as temporary:
         executable = Path(temporary) / "gateway-generic-integration"
-        command = [compiler, *flags, "-I", str(gateway / "include"), "-I", str(generic / "include"),
+        command = [compiler, *flags, "-I", str(gateway / "include"), "-I", str(gateway / "shared-publication/include"), "-I", str(generic / "include"),
                    "-I", str(common / "include"), "-I", str(cyphal / "include"),
                    "-I", str(cyphal / "generated"), "-I", str(cyphal / "vendor/libcanard"),
                    *(str(source) for source in sources), "-o", str(executable)]
