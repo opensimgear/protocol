@@ -19,14 +19,14 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           repository: opensimgear/device-template
-          ref: c8b1b9c256c319884b5380dcf3c035c903184f36
+          ref: 74cd82483524ba441ec0733ff148aa1bf3022fc1
           path: .research/ci/device-template
           persist-credentials: false
       - name: Check out device-gateway
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           repository: opensimgear/device-gateway
-          ref: 23f72ba91e5af952d045421202c4d06188e6cb8c
+          ref: b47a19ab489935eefee08623866ddb3b450d866b
           path: .research/ci/device-gateway
           persist-credentials: false
       - name: Resolve matching pinned common source
