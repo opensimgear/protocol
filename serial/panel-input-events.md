@@ -12,7 +12,67 @@ Direct module CDC accepts:
 ```text
 events state
 events read <stream> <after>
+events subscribe
+events unsubscribe
 ```
+
+## Native CDC push acquisition
+
+`events subscribe` returns `{"ok":true,"streaming":true}` and then emits
+unsolicited `@events ` JSON lines. `events unsubscribe` returns
+`{"ok":true,"streaming":false}`. Neither command claims configuration, acquires
+outputs, acknowledges product HID delivery, or changes the physical scanner.
+Subscription lifetime is the open CDC/DTR session. Disconnect, USB unmount and
+configuration re-enumeration end it; a new connection negotiates a new baseline.
+
+```text
+@events {"boot":7,"sequence":1,"kind":"baseline","state":{...events state...}}
+@events {"boot":7,"sequence":2,"kind":"update","reason":"events","state":{...events read...}}
+@events {"boot":7,"sequence":3,"kind":"loss","reason":"eventGap","state":{...events state...}}
+```
+
+The payload is the existing bounded state/read shape below. The initial baseline
+sets the consumer cursor to `head`; it never replays retained presses. Subsequent
+updates carry at most 16 consecutive edges and their `after`, `next` and `more`
+cursors. More pages drain as output capacity becomes available, without a host
+read/query timer. Calibrated axis value or availability changes also produce an
+update immediately. `reason` is `events`, `axes` or `health` for updates.
+
+Each event record includes `capturedAtMs`, the module-local u32 millisecond clock
+at the physical collector observation that generated that edge. Encoder press
+and release pairs preserve the same capture time. It may wrap; retain boot,
+stream and event sequence separately. `sampledAtMs` remains the actual latest
+collector observation. Neither field is a host receive/admission time. A quiet
+health frame is sent no more often than every 100 ms and does not fabricate a
+new sample time. Receivers must not renew sensor freshness from a repeated
+collector timestamp or infer actual simulator effects from a received frame.
+
+`sequence` is a nonzero, consecutive u32 delivery counter for this negotiated
+CDC subscription. It never wraps; exhaustion requires retirement/rebaseline.
+Frame identity also includes the verified module identity, boot and host
+connection generation. Unknown, duplicate, regressing or malformed frames
+withdraw continuity. A read update cannot change stream or boot.
+
+A ring gap or changed stream emits one explicit loss frame containing the
+replacement current baseline. Install loss first, then restore levels without
+inventing occurrences; the next update starts at that baseline's `head`.
+`scopeChanged` requires a new greater stream. `streamExhausted` includes
+`"exhausted":true` and diagnostic state only: it cannot restore fresh inputs.
+Exhaustion takes precedence over a simultaneous ring gap or a change to an
+already-exhausted greater stream; neither condition permits a healthy baseline.
+No healthy frame follows until a valid new stream. A terminal producer failure
+is `@events {"boot":7,"terminal":"producerFault"}`; retire the input source.
+
+Firmware retains one immutable outgoing frame, at most 4,288 bytes, through
+partial USB writes. It continues physical acquisition while output is blocked.
+Ring overrun therefore becomes explicit loss rather than silently coalesced
+edges. Ordinary command responses, including config ACK plus JSON, are serialized
+between complete input lines. A receiver distinguishes push lines from replies
+and drains input independently of slow command waits or display consumers.
+
+The portable producer lives in `firmware-common/opensimgear/event_stream.h`.
+The direct USB device integrates it in `usb_event_stream.c`. CAN remains a
+separate migration: correlated event read replies are not push acquisition.
 
 The gateway routes the child command through the existing sealed configuration
 envelopes, with the same identity, boot, source, logical node, lease and epoch
