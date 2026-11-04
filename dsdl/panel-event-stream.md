@@ -16,7 +16,7 @@ sequence. Exhaustion withdraws the stream and requires a new scope.
 | Layout | Contact count, maintained contact mask, encoder pair count and selector triple count. Layout is immutable in a configuration generation. Axis count, usages and neutral values come from the matching announcement. |
 | State | Complete held mask and calibrated axes, with axis availability. The cursor is the edge head represented by this state. The capture clock is the module's millisecond sample clock. |
 | Edges | One to six consecutive journal edges ending at the packet cursor. Each retains its original 32-bit capture timestamp. Control occupies the lower seven bits and pressed the high bit. |
-| Gap | Reason 1 denotes journal overflow. Reason 2 denotes counter exhaustion. A gap carries no input state or occurrence. |
+| Gap | Reason 1 denotes journal continuity loss. This includes overflow, an expired pending record or a local reset within the same wire scope. Reason 2 denotes counter exhaustion. A gap carries no input state or occurrence. |
 
 The layout order is contacts, encoder pairs and selector triples. Packed masks
 use the least significant bit first. A receiver validates total controls and
