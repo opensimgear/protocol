@@ -13,9 +13,11 @@ def normalize(text: str, protocol: Path) -> str:
     def source(match):
         return "// Source file:   " + Path(match.group(1)).relative_to(protocol).as_posix()
     text = re.sub(r"^// Source file:   (.+)$", source, text, flags=re.MULTILINE)
+    text = re.sub(r'"[^"\n]*[/\\]dsdl[/\\]([^"\n]+?\.dsdl) is trying',
+                  lambda match: '"dsdl/' + match.group(1).replace("\\", "/") + ' is trying', text)
     text = re.sub(r"^// Generated at:  .+$", "// Generated at:  reproducible snapshot (see tools/generate.py)", text, flags=re.MULTILINE)
     text = re.sub(r"// Platform\n(?:.*\n)*?// Language Options", "// Language Options", text)
-    return text
+    return text.rstrip("\n") + "\n"
 
 
 def main() -> None:
@@ -50,7 +52,7 @@ def main() -> None:
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 if destination.exists():
                     destination.chmod(0o644)
-                destination.write_text(normalized)
+                destination.write_text(normalized, newline="\n")
         existing = {path.relative_to(cyphal / "generated") for path in (cyphal / "generated").rglob("*.h")}
         if existing != expected:
             raise SystemExit(f"Unexpected generated headers: {sorted(existing - expected)}")

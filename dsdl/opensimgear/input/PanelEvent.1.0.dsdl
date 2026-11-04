@@ -1,0 +1,12 @@
+# A compact route is validated against the UID bound to the source CAN node.
+uint8 logical_node
+uint32 boot_session
+uint32 lease
+uint32 gateway_epoch
+uint32 configuration_generation
+uint32 sequence
+uint32 cursor
+uint32 sampled_at_ms
+PanelPayload.1.0 payload
+@sealed
+@assert _offset_.max <= 63 * 8

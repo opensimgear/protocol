@@ -18,7 +18,7 @@ requires a fresh application announcement/lease before accepting input from the 
 source. The gateway's logical node values 1–32 remain chain-local application routes.
 
 Outgoing application messages use the 13-bit subject-ID transport supported by Cyphal
-1.0 and 1.1. The deployment bindings are 2000–2006 as listed in the canonical
+1.0 and 1.1. The deployment bindings are 2000–2007 as listed in the canonical
 protocol checkout's `dsdl/README.md`. Firmware snapshots include the generated
 bindings; source DSDL and regeneration are maintained in the protocol checkout.
 Each application payload fits in one CAN FD frame, including at the maximum HID shape.
@@ -37,8 +37,9 @@ Emitted frames carry local `deadline_valid`/`deadline_ms` driver metadata. A har
 driver must discard an expired software-queued frame before handing it to the CAN
 controller, including across the uint32 millisecond wrap. These fields are not wire data.
 Memory pressure/expiration appears as advisory Heartbeat health. RX sessions are
-reclaimed incrementally by libcanard polling after their timeout; ten sources on all
-seven application subjects consume 70 blocks and are covered by the portable tests.
+reclaimed incrementally by libcanard polling after their timeout. Ten sources on all
+eight application subjects consume 80 blocks and are covered by the portable tests.
+The panel event subscription is explicitly enabled by its receiver.
 The expanded route test covers 32 sources concurrently publishing Announce, Input
 and Status. The pool is still bounded: simultaneous configuration/session traffic
 can create additional pressure, so 32 routes is a software capacity rather than

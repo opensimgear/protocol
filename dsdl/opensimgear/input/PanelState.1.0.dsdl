@@ -1,0 +1,5 @@
+# Least significant bit first in the held and availability masks.
+uint8[16] held
+uint16[8] axes
+uint8 axis_available
+@sealed

@@ -1,0 +1,6 @@
+@union
+PanelLayout.1.0 layout
+PanelState.1.0 state
+PanelEdge.1.0[<=6] edges
+uint8 gap
+@sealed

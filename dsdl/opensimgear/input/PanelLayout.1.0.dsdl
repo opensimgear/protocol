@@ -1,0 +1,6 @@
+# The logical order is contacts, encoder pairs, then selector triples.
+uint8 contact_count
+uint8 encoder_count
+uint8 selector_count
+uint8[16] maintained_contacts
+@sealed

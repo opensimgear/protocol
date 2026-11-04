@@ -1,0 +1,4 @@
+# Low seven bits identify the logical control. Bit seven is pressed.
+uint8 control_and_pressed
+uint32 captured_at_ms
+@sealed

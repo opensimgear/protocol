@@ -33,22 +33,22 @@
 #include <uavcan/node/Mode_1_0.h>
 
 static_assert( NUNAVUT_SUPPORT_LANGUAGE_OPTION_TARGET_ENDIANNESS == 1693710260,
-              "/Users/ntrp/_pws/opensimgear/protocol/dsdl/uavcan/node/7509.Heartbeat.1.0.dsdl is trying to use a serialization library that was compiled with "
+              "dsdl/uavcan/node/7509.Heartbeat.1.0.dsdl is trying to use a serialization library that was compiled with "
               "different language options. This is dangerous and therefore not allowed." );
 static_assert( NUNAVUT_SUPPORT_LANGUAGE_OPTION_OMIT_FLOAT_SERIALIZATION_SUPPORT == 0,
-              "/Users/ntrp/_pws/opensimgear/protocol/dsdl/uavcan/node/7509.Heartbeat.1.0.dsdl is trying to use a serialization library that was compiled with "
+              "dsdl/uavcan/node/7509.Heartbeat.1.0.dsdl is trying to use a serialization library that was compiled with "
               "different language options. This is dangerous and therefore not allowed." );
 static_assert( NUNAVUT_SUPPORT_LANGUAGE_OPTION_ENABLE_SERIALIZATION_ASSERTS == 0,
-              "/Users/ntrp/_pws/opensimgear/protocol/dsdl/uavcan/node/7509.Heartbeat.1.0.dsdl is trying to use a serialization library that was compiled with "
+              "dsdl/uavcan/node/7509.Heartbeat.1.0.dsdl is trying to use a serialization library that was compiled with "
               "different language options. This is dangerous and therefore not allowed." );
 static_assert( NUNAVUT_SUPPORT_LANGUAGE_OPTION_ENABLE_OVERRIDE_VARIABLE_ARRAY_CAPACITY == 0,
-              "/Users/ntrp/_pws/opensimgear/protocol/dsdl/uavcan/node/7509.Heartbeat.1.0.dsdl is trying to use a serialization library that was compiled with "
+              "dsdl/uavcan/node/7509.Heartbeat.1.0.dsdl is trying to use a serialization library that was compiled with "
               "different language options. This is dangerous and therefore not allowed." );
 static_assert( NUNAVUT_SUPPORT_LANGUAGE_OPTION_CAST_FORMAT == 2368206204,
-              "/Users/ntrp/_pws/opensimgear/protocol/dsdl/uavcan/node/7509.Heartbeat.1.0.dsdl is trying to use a serialization library that was compiled with "
+              "dsdl/uavcan/node/7509.Heartbeat.1.0.dsdl is trying to use a serialization library that was compiled with "
               "different language options. This is dangerous and therefore not allowed." );
 static_assert( NUNAVUT_SUPPORT_LANGUAGE_OPTION_STD == 575908835,
-              "/Users/ntrp/_pws/opensimgear/protocol/dsdl/uavcan/node/7509.Heartbeat.1.0.dsdl is trying to use a serialization library that was compiled with "
+              "dsdl/uavcan/node/7509.Heartbeat.1.0.dsdl is trying to use a serialization library that was compiled with "
               "different language options. This is dangerous and therefore not allowed." );
 
 #ifdef __cplusplus
@@ -294,4 +294,3 @@ static inline void uavcan_node_Heartbeat_1_0_initialize_(uavcan_node_Heartbeat_1
 }
 #endif
 #endif // UAVCAN_NODE_HEARTBEAT_1_0_INCLUDED_
-

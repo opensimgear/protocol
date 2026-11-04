@@ -26,6 +26,7 @@ bus must reserve these IDs or change the bindings consistently before building.
 | 2004 | `opensimgear.input.InputAck.1.0` | 47 | Gateway after USB completion |
 | 2005 | `opensimgear.input.ConfigRequest.1.0` | 62 | Gateway |
 | 2006 | `opensimgear.input.ConfigResponse.1.0` | 62 | Generic device |
+| 2007 | `opensimgear.input.PanelEvent.1.0` | 31–63 | Generic device |
 | 7509 | `uavcan.node.Heartbeat.1.0` | 7 | Every node, at least once per second |
 | Service 430 | `uavcan.node.GetInfo.1.0` | Request 0; response up to 313 | Every node responds |
 
@@ -53,6 +54,9 @@ by their `action ` prefix, and [panel input event reads](../serial/panel-input-e
 format/catalogue revisions live in that application JSON, not DSDL versions.
 Application Status proves the fresh lease independently of HID input ownership
 and keeps actions reachable for disabled or direct USB devices.
+
+The independent [panel event stream](panel-event-stream.md) carries original
+capture timestamps and explicit continuity, using the current assigned route.
 
 `logical_node` values 1–32 identify gateway-local routes and are independent of
 the transport's 7-bit CAN node-ID. Each chain has one physical controller shared

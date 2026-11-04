@@ -22,14 +22,14 @@ def main():
             paths += [args.workspace / repo / 'firmware/shared-cyphal' / name
                       for repo in ('device-gateway', 'device-template')]
         for path in paths:
-            digest = hashlib.sha256(path.read_bytes()).hexdigest()
+            digest = hashlib.sha256(path.read_bytes().replace(b"\r\n", b"\n")).hexdigest()
             if digest != expected:
                 raise SystemExit(f'Cyphal source differs from canonical snapshot: {path}')
             checked += 1
     for root in ([reference] + ([args.workspace / repo / 'firmware/shared-cyphal'
                                for repo in ('device-gateway', 'device-template')]
                               if args.workspace else [])):
-        actual = {str(path.relative_to(root)) for path in root.rglob('*')
+        actual = {path.relative_to(root).as_posix() for path in root.rglob('*')
                   if path.is_file() and path.name != 'SHA256.json'}
         if actual != set(manifest):
             raise SystemExit(f'Unexpected or missing Cyphal snapshot files: {root}')

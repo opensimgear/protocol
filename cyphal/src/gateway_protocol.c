@@ -7,6 +7,7 @@
 #include "opensimgear/input/InputAck_1_0.h"
 #include "opensimgear/input/ConfigRequest_1_0.h"
 #include "opensimgear/input/ConfigResponse_1_0.h"
+#include "opensimgear/input/PanelEvent_1_0.h"
 
 
 static void write16(uint8_t *p,uint16_t v) { p[0]=(uint8_t)v; p[1]=(uint8_t)(v>>8); }
@@ -96,12 +97,38 @@ uint32_t osg_gateway_crc32(const void *data,size_t length) {
     }
     return ~crc;
 }
+static bool valid_panel(const osg_gateway_message_t *m) {
+    if(m->direct_usb || !m->gateway_epoch || !m->configuration_generation || !m->sequence) return false;
+    switch(m->panel_kind) {
+    case OSG_PANEL_LAYOUT: {
+        const osg_panel_layout_t *layout=&m->panel_layout;
+        unsigned contacts=layout->contact_count;
+        if(layout->encoder_count>8 || layout->selector_count>8 ||
+           contacts+2U*layout->encoder_count+3U*layout->selector_count>OSG_GW_MAX_BUTTONS) return false;
+        for(unsigned i=contacts;i<OSG_GW_MAX_BUTTONS;i++) {
+            if(layout->maintained_contacts[i/8]&(1U<<(i%8))) return false;
+        }
+        return true;
+    }
+    case OSG_PANEL_STATE: return true;
+    case OSG_PANEL_EDGES:
+        if(!m->panel_edges.count || m->panel_edges.count>OSG_PANEL_MAX_EDGES ||
+           m->panel_edges.count>m->panel_cursor) return false;
+        for(unsigned i=0;i<m->panel_edges.count;i++) {
+            if(m->panel_edges.entries[i].control>=OSG_GW_MAX_BUTTONS) return false;
+        }
+        return true;
+    case OSG_PANEL_GAP: return m->panel_gap==OSG_PANEL_GAP_RING || m->panel_gap==OSG_PANEL_GAP_EXHAUSTED;
+    default: return false;
+    }
+}
 static bool valid_message(const osg_gateway_message_t *m) {
     if(!m || !m->boot_session) return false;
     bool compact=m->type==OSG_GW_INPUT || m->type==OSG_GW_INPUT_ACK;
-    if(!compact && !osg_gateway_identity_valid(&m->identity)) return false;
+    if(!compact && m->type!=OSG_GW_PANEL_EVENT && !osg_gateway_identity_valid(&m->identity)) return false;
     if(m->type==OSG_GW_ANNOUNCE) return !m->node && osg_gateway_profile_valid(&m->profile);
     if(m->node<1 || m->node>OSG_GW_MAX_MODULES || !m->lease) return false;
+    if(m->type==OSG_GW_PANEL_EVENT) return valid_panel(m);
     if(m->type==OSG_GW_ASSIGN) return !m->direct_usb && m->gateway_epoch!=0;
     if(m->type==OSG_GW_CONFIG_REQUEST || m->type==OSG_GW_CONFIG_RESPONSE) {
         unsigned capacity=m->type==OSG_GW_CONFIG_REQUEST ? OSG_GW_CONFIG_COMMAND_CAPACITY : OSG_GW_CONFIG_RESPONSE_CAPACITY;
@@ -124,11 +151,87 @@ uint16_t osg_gateway_subject(osg_gateway_message_type_t type) {
     case OSG_GW_INPUT_ACK: return OSG_CYPHAL_SUBJECT_INPUT_ACK;
     case OSG_GW_CONFIG_REQUEST: return OSG_CYPHAL_SUBJECT_CONFIG_REQUEST;
     case OSG_GW_CONFIG_RESPONSE: return OSG_CYPHAL_SUBJECT_CONFIG_RESPONSE;
+    case OSG_GW_PANEL_EVENT: return OSG_CYPHAL_SUBJECT_PANEL_EVENT;
     default: return UINT16_MAX;
     }
 }
+static size_t encode_panel(const osg_gateway_message_t *m,void *buffer,size_t capacity) {
+    opensimgear_input_PanelEvent_1_0 x={
+        .logical_node=m->node,.boot_session=m->boot_session,.lease=m->lease,
+        .gateway_epoch=m->gateway_epoch,.configuration_generation=m->configuration_generation,
+        .sequence=m->sequence,.cursor=m->panel_cursor,.sampled_at_ms=m->panel_sampled_at_ms
+    };
+    x.payload._tag_=(uint8_t)m->panel_kind;
+    switch(m->panel_kind) {
+    case OSG_PANEL_LAYOUT:
+        x.payload.layout.contact_count=m->panel_layout.contact_count;
+        x.payload.layout.encoder_count=m->panel_layout.encoder_count;
+        x.payload.layout.selector_count=m->panel_layout.selector_count;
+        memcpy(x.payload.layout.maintained_contacts,m->panel_layout.maintained_contacts,OSG_PANEL_HELD_BYTES);
+        break;
+    case OSG_PANEL_STATE:
+        memcpy(x.payload.state.held,m->panel_state.held,OSG_PANEL_HELD_BYTES);
+        memcpy(x.payload.state.axes,m->panel_state.axes,sizeof x.payload.state.axes);
+        x.payload.state.axis_available=m->panel_state.axis_available;
+        break;
+    case OSG_PANEL_EDGES:
+        x.payload.edges.count=m->panel_edges.count;
+        for(unsigned i=0;i<m->panel_edges.count;i++) {
+            const osg_panel_edge_t *edge=&m->panel_edges.entries[i];
+            x.payload.edges.elements[i].control_and_pressed=edge->control|(edge->pressed?128U:0U);
+            x.payload.edges.elements[i].captured_at_ms=edge->captured_at_ms;
+        }
+        break;
+    case OSG_PANEL_GAP: x.payload.gap=(uint8_t)m->panel_gap;break;
+    default: return 0;
+    }
+    return opensimgear_input_PanelEvent_1_0_serialize_(&x,buffer,&capacity)>=0 ? capacity : 0;
+}
+static bool decode_panel(const void *buffer,size_t length,osg_gateway_message_t *m) {
+    /* Seven uint32 fields, the route slot and the union tag. Nunavut can
+     * zero-extend truncated messages, so enforce each complete variant. */
+    const size_t prefix=30;
+    if(length<=prefix || length>opensimgear_input_PanelEvent_1_0_SERIALIZATION_BUFFER_SIZE_BYTES_) return false;
+    opensimgear_input_PanelEvent_1_0 x;
+    size_t consumed=length;
+    if(opensimgear_input_PanelEvent_1_0_deserialize_(&x,buffer,&consumed)<0) return false;
+    m->type=OSG_GW_PANEL_EVENT;
+    m->node=x.logical_node;m->boot_session=x.boot_session;m->lease=x.lease;
+    m->gateway_epoch=x.gateway_epoch;m->configuration_generation=x.configuration_generation;
+    m->sequence=x.sequence;m->panel_cursor=x.cursor;m->panel_sampled_at_ms=x.sampled_at_ms;
+    m->panel_kind=(osg_panel_kind_t)x.payload._tag_;
+    size_t required=prefix;
+    switch(m->panel_kind) {
+    case OSG_PANEL_LAYOUT:
+        required+=19;
+        m->panel_layout.contact_count=x.payload.layout.contact_count;
+        m->panel_layout.encoder_count=x.payload.layout.encoder_count;
+        m->panel_layout.selector_count=x.payload.layout.selector_count;
+        memcpy(m->panel_layout.maintained_contacts,x.payload.layout.maintained_contacts,OSG_PANEL_HELD_BYTES);
+        break;
+    case OSG_PANEL_STATE:
+        required+=33;
+        memcpy(m->panel_state.held,x.payload.state.held,OSG_PANEL_HELD_BYTES);
+        memcpy(m->panel_state.axes,x.payload.state.axes,sizeof m->panel_state.axes);
+        m->panel_state.axis_available=x.payload.state.axis_available;
+        break;
+    case OSG_PANEL_EDGES:
+        required+=1+5*x.payload.edges.count;
+        m->panel_edges.count=(uint8_t)x.payload.edges.count;
+        for(unsigned i=0;i<m->panel_edges.count;i++) {
+            uint8_t packed=x.payload.edges.elements[i].control_and_pressed;
+            m->panel_edges.entries[i]=(osg_panel_edge_t){.control=packed&127U,.pressed=(packed&128U)!=0,
+                .captured_at_ms=x.payload.edges.elements[i].captured_at_ms};
+        }
+        break;
+    case OSG_PANEL_GAP: required++;m->panel_gap=(osg_panel_gap_t)x.payload.gap;break;
+    default: return false;
+    }
+    return required<=length && zero((const uint8_t *)buffer+required,length-required);
+}
 size_t osg_gateway_payload_encode(const osg_gateway_message_t *m,void *buffer,size_t capacity) {
     if(!buffer || !valid_message(m)) return 0;
+    if(m->type==OSG_GW_PANEL_EVENT) return encode_panel(m,buffer,capacity);
     size_t length=capacity;
     if(m->type==OSG_GW_CONFIG_REQUEST || m->type==OSG_GW_CONFIG_RESPONSE) {
 #define SERIALIZE_CONFIG(TYPE) do { TYPE x={0}; x.logical_node=m->node; \
@@ -214,6 +317,9 @@ bool osg_gateway_payload_decode(uint16_t subject,const void *buffer,size_t lengt
         *out=m; return true;
     }
     switch(subject) {
+    case OSG_CYPHAL_SUBJECT_PANEL_EVENT:
+        if(!decode_panel(buffer,length,&m)) return false;
+        break;
     case OSG_CYPHAL_SUBJECT_ANNOUNCE: {
         if(length<opensimgear_input_Announce_1_0_SERIALIZATION_BUFFER_SIZE_BYTES_) return false;
         opensimgear_input_Announce_1_0 x;

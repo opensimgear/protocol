@@ -31,11 +31,26 @@ static osg_gateway_message_t message(osg_gateway_message_type_t type,unsigned id
         m.config_total=49; m.config_offset=24; m.config_length=24;
         memcpy(m.config_data,"abcdefghijklmnopqrstuvwx",24);
     }
+    if(type==OSG_GW_PANEL_EVENT) {
+        m.panel_kind=OSG_PANEL_STATE;m.panel_cursor=UINT32_C(0x12345678);
+        m.panel_sampled_at_ms=UINT32_C(0x87654321);
+        for(unsigned i=0;i<OSG_PANEL_HELD_BYTES;i++) m.panel_state.held[i]=(uint8_t)(0xa0+i);
+        for(unsigned i=0;i<OSG_GW_MAX_AXES;i++) m.panel_state.axes[i]=(uint16_t)(0x1200+i*17);
+        m.panel_state.axis_available=0xa5;
+    }
     return m;
 }
 static void roundtrip_test(void) {
     static osg_cyphal_t a,b;queue_t qa,qb;init(&a,&qa,1,"org.opensimgear.device");init(&b,&qb,2,"org.opensimgear.gateway");
-    for(unsigned type=1;type<=7;type++) {
+    assert(!osg_cyphal_enable_panel_events(NULL));
+    osg_gateway_message_t probe=message(OSG_GW_PANEL_EVENT,1),ignored;
+    assert(osg_cyphal_send(&a,&probe,0) && qa.count==1);
+    assert(!osg_cyphal_receive(&b,&qa.frames[0],0,&ignored));
+    assert(b.free_count==OSG_CYPHAL_POOL_BLOCK_COUNT);
+    assert(osg_cyphal_enable_panel_events(&b));
+    assert(osg_cyphal_enable_panel_events(&b));
+    osg_cyphal_reset(&b);
+    for(unsigned type=1;type<=OSG_GW_PANEL_EVENT;type++) {
         osg_gateway_message_t m=message((osg_gateway_message_type_t)type,1),out;
         qa.count=0;assert(osg_cyphal_send(&a,&m,type));assert(qa.count==1);
         osg_gateway_frame_t f=qa.frames[0];
@@ -49,6 +64,17 @@ static void roundtrip_test(void) {
             assert(f.length==64 && out.gateway_epoch==65536 && out.sequence==7 &&
                 out.config_offset==24 && out.config_total==49 && out.config_length==24 &&
                 !memcmp(m.config_data,out.config_data,24));
+        }
+        if(type==OSG_GW_PANEL_EVENT) {
+            assert(osg_gateway_subject(m.type)==OSG_CYPHAL_SUBJECT_PANEL_EVENT);
+            assert(out.panel_kind==OSG_PANEL_STATE && out.panel_cursor==m.panel_cursor &&
+                   out.panel_sampled_at_ms==m.panel_sampled_at_ms);
+            assert(!memcmp(m.panel_state.held,out.panel_state.held,sizeof m.panel_state.held));
+            assert(!memcmp(m.panel_state.axes,out.panel_state.axes,sizeof m.panel_state.axes));
+            assert(out.panel_state.axis_available==m.panel_state.axis_available);
+            assert(out.boot_session==m.boot_session && out.lease==m.lease &&
+                   out.gateway_epoch==m.gateway_epoch &&
+                   out.configuration_generation==m.configuration_generation && out.sequence==m.sequence);
         }
         assert(!osg_cyphal_receive(&b,&f,type,&out)); /* Transfer-ID duplicate suppression. */
         f.length=9;assert(!osg_cyphal_receive(&b,&f,type,&out));
@@ -118,8 +144,10 @@ static void backpressure_reset_collision_test(void) {
     assert(a.canard.err.tx_sacrifice==0 && qa.count==0);
     qa.blocked=false;osg_cyphal_tick(&a,1);assert(qa.count==OSG_CYPHAL_TX_CAPACITY+1);
     assert(a.canard.tx.queue_size==0 && a.free_count==OSG_CYPHAL_POOL_BLOCK_COUNT);
-    qa.count=0;qa.blocked=true;assert(osg_cyphal_send(&a,&m,2));uint8_t tid=a.transfer_ids[2];
-    osg_cyphal_reset(&a);assert(osg_cyphal_node_id(&a)==1 && a.transfer_ids[2]==tid && a.canard.tx.queue_size==0);
+    const unsigned input_transfer_index=OSG_CYPHAL_SUBJECT_INPUT-OSG_CYPHAL_SUBJECT_ANNOUNCE;
+    qa.count=0;qa.blocked=true;assert(osg_cyphal_send(&a,&m,2));uint8_t tid=a.transfer_ids[input_transfer_index];
+    osg_cyphal_reset(&a);assert(osg_cyphal_node_id(&a)==1 &&
+        a.transfer_ids[input_transfer_index]==tid && a.canard.tx.queue_size==0);
     assert(a.free_count==OSG_CYPHAL_POOL_BLOCK_COUNT);qa.blocked=false;osg_cyphal_tick(&a,3);assert(qa.count==0);
     uint16_t available=a.free_count;a.free_count=0;
     assert(!osg_cyphal_send(&a,&m,3) && a.canard.err.oom>0);a.free_count=available;
@@ -131,16 +159,17 @@ static void backpressure_reset_collision_test(void) {
 }
 static void ten_devices_test(void) {
     static osg_cyphal_t sender,gateway;queue_t qs,qg;init(&sender,&qs,1,"org.opensimgear.device");init(&gateway,&qg,100,"org.opensimgear.gateway");
+    assert(osg_cyphal_enable_panel_events(&gateway));
     osg_gateway_message_t out;
     for(unsigned node=1;node<=10;node++) {
         assert(canard_set_node_id(&sender.canard,(uint8_t)node));
-        for(unsigned type=1;type<=7;type++) {
+        for(unsigned type=1;type<=OSG_GW_PANEL_EVENT;type++) {
             osg_gateway_message_t m=message((osg_gateway_message_type_t)type,node);qs.count=0;
             assert(osg_cyphal_send(&sender,&m,node));assert(qs.count==1);
             assert(osg_cyphal_receive(&gateway,&qs.frames[0],node,&out) && out.source_node==node);
         }
     }
-    assert(gateway.canard.err.oom==0 && gateway.free_count==OSG_CYPHAL_POOL_BLOCK_COUNT-70);
+    assert(gateway.canard.err.oom==0 && gateway.free_count==OSG_CYPHAL_POOL_BLOCK_COUNT-80);
     for(unsigned i=0;i<80;i++) osg_cyphal_tick(&gateway,31011+i);
     assert(gateway.free_count==OSG_CYPHAL_POOL_BLOCK_COUNT);
     osg_cyphal_destroy(&sender);osg_cyphal_destroy(&gateway);
@@ -190,6 +219,6 @@ static void clock_test(void) {
 }
 int main(void) {
     roundtrip_test();standard_services_test();backpressure_reset_collision_test();ten_devices_test();expanded_routes_test();clock_test();
-    puts("PASS: generated DSDL, real Cyphal FD/Classic transfers, TID/CRC guards, Heartbeat/GetInfo, bounded backpressure/OOM, reset/collision, 32 input routes and RX aging");
+    puts("PASS: generated DSDL, real Cyphal FD/Classic transfers, panel-state roundtrip, TID/CRC guards, Heartbeat/GetInfo, bounded backpressure/OOM, reset/collision, 32 input routes and RX aging");
     return 0;
 }
