@@ -27,8 +27,9 @@ counters/deduplication, multi-frame CRC and reassembly. Incoming Classic CAN tra
 are supported too. Standard Heartbeat is published on 7509 at one-second intervals;
 GetInfo service 430 returns generated standard node information, stable UID and name.
 
-Instances contain a 128-block, 256-byte aligned pool (32 KiB) with constant-time
-allocation/release and a 16-frame TX queue. Allocation failure and full queues return
+Instances contain a 48-block pool of 256-byte blocks for TX, RX payloads, and
+filters, plus a separate pool of 192 RX sessions. Both use constant-time
+allocation/release. The TX queue holds 16 frames. Allocation failure and full queues return
 failure without accepting an application transfer. `send` success means transport
 queue admission; CAN driver backpressure leaves queued frames pending for `tick` to
 retry. The application USB-completion acknowledgement remains the delivery boundary.
@@ -37,13 +38,13 @@ Emitted frames carry local `deadline_valid`/`deadline_ms` driver metadata. A har
 driver must discard an expired software-queued frame before handing it to the CAN
 controller, including across the uint32 millisecond wrap. These fields are not wire data.
 Memory pressure/expiration appears as advisory Heartbeat health. RX sessions are
-reclaimed incrementally by libcanard polling after their timeout. Ten sources on all
-eight application subjects consume 80 blocks and are covered by the portable tests.
+reclaimed incrementally by libcanard polling after their timeout. Retained RX
+sessions do not use blocks from the TX and payload pool.
 The panel event subscription is explicitly enabled by its receiver.
-The expanded route test covers 32 sources concurrently publishing Announce, Input
-and Status. The pool is still bounded: simultaneous configuration/session traffic
-can create additional pressure, so 32 routes is a software capacity rather than
-a measured aggregate throughput guarantee. The bounded configuration envelopes
+The expanded route test covers 160 retained sessions from 32 sources publishing
+Announce, Input, Status, PanelEvent, and ConfigResponse. It checks TX queue
+admission and multi-frame reception while those sessions remain active. This
+tests memory capacity. The bounded configuration envelopes
 also carry [device actions](https://github.com/opensimgear/protocol/blob/main/serial/device-actions.md), selected by the `action `
 command prefix (including [endpoint leases and output-only devices](https://github.com/opensimgear/protocol/blob/main/serial/output-ownership.md)), and [panel input events](https://github.com/opensimgear/protocol/blob/main/serial/panel-input-events.md) selected by `events `. No new subjects or sealed DSDL edits are required. Application
 Status provides route proof even when HID input is disabled or direct USB owned.

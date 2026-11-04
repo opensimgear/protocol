@@ -4,7 +4,9 @@
 #include "canard.h"
 
 /* One physical CAN controller, including daisy-chain sockets. The instance must never be moved while live. */
-enum { OSG_CYPHAL_POOL_BLOCK_SIZE=256, OSG_CYPHAL_POOL_BLOCK_COUNT=128,
+enum { OSG_CYPHAL_POOL_BLOCK_SIZE=256, OSG_CYPHAL_POOL_BLOCK_COUNT=48,
+       OSG_CYPHAL_SESSION_COUNT=192,
+       OSG_CYPHAL_SESSION_SIZE=sizeof(void*)>4 ? 160 : 96,
        OSG_CYPHAL_TX_CAPACITY=16, OSG_CYPHAL_HEARTBEAT_SUBJECT=7509,
        OSG_CYPHAL_GET_INFO_SERVICE=430,
        OSG_CYPHAL_APPLICATION_SUBJECT_COUNT=OSG_CYPHAL_SUBJECT_PANEL_EVENT-OSG_CYPHAL_SUBJECT_ANNOUNCE+1,
@@ -14,11 +16,14 @@ enum { OSG_CYPHAL_POOL_BLOCK_SIZE=256, OSG_CYPHAL_POOL_BLOCK_COUNT=128,
        OSG_CYPHAL_TRANSFER_ID_COUNT=OSG_CYPHAL_APPLICATION_SUBJECT_COUNT+1 };
 typedef bool (*osg_cyphal_send_fn)(void *,const osg_gateway_frame_t *);
 typedef union { max_align_t alignment; uint8_t bytes[OSG_CYPHAL_POOL_BLOCK_SIZE]; } osg_cyphal_block_t;
+typedef union { max_align_t alignment; uint8_t bytes[OSG_CYPHAL_SESSION_SIZE]; } osg_cyphal_session_block_t;
 typedef struct {
     canard_t canard;
     canard_subscription_t subscriptions[OSG_CYPHAL_SUBSCRIPTION_COUNT];
     osg_cyphal_block_t pool[OSG_CYPHAL_POOL_BLOCK_COUNT];
     uint16_t free_blocks[OSG_CYPHAL_POOL_BLOCK_COUNT],free_count;
+    osg_cyphal_session_block_t session_pool[OSG_CYPHAL_SESSION_COUNT];
+    uint16_t free_sessions[OSG_CYPHAL_SESSION_COUNT],session_free_count;
     osg_gateway_identity_t identity;
     uint32_t boot_session,last_ms;
     uint64_t monotonic_ms,last_heartbeat_ms;

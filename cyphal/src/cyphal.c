@@ -12,13 +12,27 @@ static void release(canard_mem_t memory,size_t size,void *pointer) {
     (void)size;
     osg_cyphal_t *t=memory.context;
     if(pointer) {
-        /* Every resource uses the same aligned fixed-block pool, including RX payload ownership. */
+        /* TX, filters and RX payloads share the general arena. */
         size_t index=((uint8_t *)pointer-(uint8_t *)t->pool)/sizeof t->pool[0];
         if(index<OSG_CYPHAL_POOL_BLOCK_COUNT && t->free_count<OSG_CYPHAL_POOL_BLOCK_COUNT)
             t->free_blocks[t->free_count++]=(uint16_t)index;
     }
 }
 static const canard_mem_vtable_t memory_vtable={.alloc=allocate,.free=release};
+static void *allocate_session(canard_mem_t memory,size_t size) {
+    osg_cyphal_t *t=memory.context;
+    if(size>OSG_CYPHAL_SESSION_SIZE || !t->session_free_count) return NULL;
+    return t->session_pool[t->free_sessions[--t->session_free_count]].bytes;
+}
+static void release_session(canard_mem_t memory,size_t size,void *pointer) {
+    (void)size;
+    osg_cyphal_t *t=memory.context;
+    if(!pointer) return;
+    size_t index=((uint8_t *)pointer-(uint8_t *)t->session_pool)/sizeof t->session_pool[0];
+    if(index<OSG_CYPHAL_SESSION_COUNT && t->session_free_count<OSG_CYPHAL_SESSION_COUNT)
+        t->free_sessions[t->session_free_count++]=(uint16_t)index;
+}
+static const canard_mem_vtable_t session_memory_vtable={.alloc=allocate_session,.free=release_session};
 static canard_us_t current_time(const canard_t *canard) {
     const osg_cyphal_t *t=canard->user_context;
     return (canard_us_t)(t->monotonic_ms*1000U);
@@ -87,8 +101,11 @@ bool osg_cyphal_enable_panel_events(osg_cyphal_t *t) {
 static bool start(osg_cyphal_t *t) {
     t->free_count=OSG_CYPHAL_POOL_BLOCK_COUNT;
     for(unsigned i=0;i<OSG_CYPHAL_POOL_BLOCK_COUNT;i++) t->free_blocks[i]=(uint16_t)i;
+    t->session_free_count=OSG_CYPHAL_SESSION_COUNT;
+    for(unsigned i=0;i<OSG_CYPHAL_SESSION_COUNT;i++) t->free_sessions[i]=(uint16_t)i;
     canard_mem_t memory={.vtable=&memory_vtable,.context=t};
-    canard_mem_set_t set={.tx_transfer=memory,.tx_frame=memory,.rx_session=memory,.rx_payload=memory,.rx_filters=memory};
+    canard_mem_t sessions={.vtable=&session_memory_vtable,.context=t};
+    canard_mem_set_t set={.tx_transfer=memory,.tx_frame=memory,.rx_session=sessions,.rx_payload=memory,.rx_filters=memory};
     if(!canard_new(&t->canard,&transport_vtable,set,1,OSG_CYPHAL_TX_CAPACITY,seed(t),0)) return false;
     t->canard.user_context=t;
     unsigned subjects=OSG_CYPHAL_APPLICATION_SUBJECT_COUNT;

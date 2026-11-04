@@ -101,6 +101,7 @@ static void roundtrip_test(void) {
     for(size_t i=0;i<qa.count;i++) assert(!osg_cyphal_receive(&b,&qa.frames[i],12,&out));
     osg_cyphal_destroy(&a);osg_cyphal_destroy(&b);
     assert(a.free_count==OSG_CYPHAL_POOL_BLOCK_COUNT && b.free_count==OSG_CYPHAL_POOL_BLOCK_COUNT);
+    assert(a.session_free_count==OSG_CYPHAL_SESSION_COUNT && b.session_free_count==OSG_CYPHAL_SESSION_COUNT);
 }
 typedef struct { unsigned count;uint8_t source,tid;uavcan_node_GetInfo_Response_1_0 info;uavcan_node_Heartbeat_1_0 heartbeat; } capture_t;
 static void capture(canard_subscription_t *sub,canard_us_t ts,canard_prio_t priority,uint_least8_t source,
@@ -135,6 +136,7 @@ static void standard_services_test(void) {
     canard_unsubscribe(&client.canard,&si);canard_unsubscribe(&client.canard,&sh);
     osg_cyphal_destroy(&client);osg_cyphal_destroy(&server);
     assert(client.free_count==OSG_CYPHAL_POOL_BLOCK_COUNT && server.free_count==OSG_CYPHAL_POOL_BLOCK_COUNT);
+    assert(client.session_free_count==OSG_CYPHAL_SESSION_COUNT && server.session_free_count==OSG_CYPHAL_SESSION_COUNT);
 }
 static void backpressure_reset_collision_test(void) {
     static osg_cyphal_t a,b;queue_t qa,qb;init(&a,&qa,1,"org.opensimgear.device");init(&b,&qb,2,"org.opensimgear.gateway");
@@ -149,6 +151,7 @@ static void backpressure_reset_collision_test(void) {
     osg_cyphal_reset(&a);assert(osg_cyphal_node_id(&a)==1 &&
         a.transfer_ids[input_transfer_index]==tid && a.canard.tx.queue_size==0);
     assert(a.free_count==OSG_CYPHAL_POOL_BLOCK_COUNT);qa.blocked=false;osg_cyphal_tick(&a,3);assert(qa.count==0);
+    assert(a.session_free_count==OSG_CYPHAL_SESSION_COUNT);
     uint16_t available=a.free_count;a.free_count=0;
     assert(!osg_cyphal_send(&a,&m,3) && a.canard.err.oom>0);a.free_count=available;
     /* Collision tracking is independent of the application subscription. */
@@ -169,16 +172,19 @@ static void ten_devices_test(void) {
             assert(osg_cyphal_receive(&gateway,&qs.frames[0],node,&out) && out.source_node==node);
         }
     }
-    assert(gateway.canard.err.oom==0 && gateway.free_count==OSG_CYPHAL_POOL_BLOCK_COUNT-80);
+    assert(gateway.canard.err.oom==0 && gateway.free_count==OSG_CYPHAL_POOL_BLOCK_COUNT);
+    assert(gateway.session_free_count==OSG_CYPHAL_SESSION_COUNT-80);
     for(unsigned i=0;i<80;i++) osg_cyphal_tick(&gateway,31011+i);
-    assert(gateway.free_count==OSG_CYPHAL_POOL_BLOCK_COUNT);
+    assert(gateway.free_count==OSG_CYPHAL_POOL_BLOCK_COUNT && gateway.session_free_count==OSG_CYPHAL_SESSION_COUNT);
     osg_cyphal_destroy(&sender);osg_cyphal_destroy(&gateway);
 }
 static void expanded_routes_test(void) {
     static osg_cyphal_t sender,gateway;queue_t qs,qg;
     init(&sender,&qs,1,"org.opensimgear.device");init(&gateway,&qg,100,"org.opensimgear.gateway");
     osg_gateway_message_t out;
-    const osg_gateway_message_type_t types[]={OSG_GW_ANNOUNCE,OSG_GW_INPUT,OSG_GW_HEARTBEAT};
+    assert(osg_cyphal_enable_panel_events(&gateway));
+    const osg_gateway_message_type_t types[]={OSG_GW_ANNOUNCE,OSG_GW_INPUT,OSG_GW_HEARTBEAT,
+                                               OSG_GW_PANEL_EVENT,OSG_GW_CONFIG_RESPONSE};
     for(unsigned node=1;node<=32;node++) {
         assert(canard_set_node_id(&sender.canard,(uint8_t)node));
         for(unsigned i=0;i<sizeof types/sizeof types[0];i++) {
@@ -190,8 +196,45 @@ static void expanded_routes_test(void) {
         }
     }
     assert(gateway.canard.err.oom==0);
-    for(unsigned i=0;i<80;i++) osg_cyphal_tick(&gateway,31033+i);
     assert(gateway.free_count==OSG_CYPHAL_POOL_BLOCK_COUNT);
+    assert(gateway.session_free_count==OSG_CYPHAL_SESSION_COUNT-32*5);
+
+    /* Active RX sessions do not consume TX blocks, even while TX is backpressured. */
+    qg.blocked=true;
+    osg_gateway_message_t tx=message(OSG_GW_INPUT,100);
+    for(unsigned i=0;i<OSG_CYPHAL_TX_CAPACITY;i++) assert(osg_cyphal_send(&gateway,&tx,32));
+    assert(!osg_cyphal_send(&gateway,&tx,32) && gateway.canard.tx.queue_size==OSG_CYPHAL_TX_CAPACITY);
+    assert(gateway.free_count==OSG_CYPHAL_POOL_BLOCK_COUNT-2*OSG_CYPHAL_TX_CAPACITY);
+    assert(gateway.session_free_count==OSG_CYPHAL_SESSION_COUNT-32*5);
+
+    /* A Classic CAN multi-frame response still reassembles with every RX route live. */
+    sender.canard.tx.fd=false;
+    osg_gateway_message_t response=message(OSG_GW_CONFIG_RESPONSE,32),rx;
+    qs.count=0;assert(osg_cyphal_send(&sender,&response,34) && qs.count>1);
+    for(size_t i=0;i<qs.count;i++)
+        assert(osg_cyphal_receive(&gateway,&qs.frames[i],34,&rx)==(i==qs.count-1));
+    assert(rx.type==OSG_GW_CONFIG_RESPONSE && rx.source_node==32 && rx.config_length==24);
+    assert(gateway.canard.tx.queue_size==OSG_CYPHAL_TX_CAPACITY);
+    qg.blocked=false;osg_cyphal_tick(&gateway,35);
+    assert(gateway.canard.tx.queue_size==0 && qg.count==OSG_CYPHAL_TX_CAPACITY+1);
+
+    /* Additional CAN sources can exhaust sessions without starving outbound traffic. */
+    sender.canard.tx.fd=true;
+    osg_gateway_message_t extra=message(OSG_GW_INPUT,1);
+    for(unsigned i=0;i<=OSG_CYPHAL_SESSION_COUNT-32*5;i++) {
+        assert(canard_set_node_id(&sender.canard,(uint8_t)(33+i)));
+        qs.count=0;
+        assert(osg_cyphal_send(&sender,&extra,36+i) && qs.count==1);
+        assert(osg_cyphal_receive(&gateway,&qs.frames[0],36+i,&out)==
+               (i<OSG_CYPHAL_SESSION_COUNT-32*5));
+    }
+    assert(gateway.session_free_count==0 && gateway.canard.err.oom==1);
+    assert(gateway.free_count==OSG_CYPHAL_POOL_BLOCK_COUNT && osg_cyphal_send(&gateway,&tx,70));
+
+    for(unsigned i=0;i<OSG_CYPHAL_SESSION_COUNT;i++) osg_cyphal_tick(&gateway,31100+i);
+    assert(gateway.free_count==OSG_CYPHAL_POOL_BLOCK_COUNT && gateway.session_free_count==OSG_CYPHAL_SESSION_COUNT);
+    osg_cyphal_reset(&gateway);
+    assert(gateway.free_count==OSG_CYPHAL_POOL_BLOCK_COUNT && gateway.session_free_count==OSG_CYPHAL_SESSION_COUNT);
     osg_gateway_message_t m=message(OSG_GW_CONFIG_REQUEST,32);
     uint8_t payload[64];m.node=32;
     size_t length=osg_gateway_payload_encode(&m,payload,sizeof payload);assert(length);
@@ -219,6 +262,6 @@ static void clock_test(void) {
 }
 int main(void) {
     roundtrip_test();standard_services_test();backpressure_reset_collision_test();ten_devices_test();expanded_routes_test();clock_test();
-    puts("PASS: generated DSDL, real Cyphal FD/Classic transfers, panel-state roundtrip, TID/CRC guards, Heartbeat/GetInfo, bounded backpressure/OOM, reset/collision, 32 input routes and RX aging");
+    puts("PASS: generated DSDL, real Cyphal FD/Classic transfers, panel-state roundtrip, TID/CRC guards, Heartbeat/GetInfo, bounded backpressure/OOM, reset/collision, 32 sources on five RX routes and independent pool aging");
     return 0;
 }
