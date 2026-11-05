@@ -158,7 +158,11 @@ device state such as raw contacts, axes, expansion availability and the active
 definition. Both are wake hints for a correlated snapshot. Raw HID and ordered
 device events keep their existing transports. This capability grants no CAN
 publication authority. The Pico command watchdog still applies and resets the
-stream when it neutralizes the connection.
+stream when it neutralizes the connection. On an idle subscribed connection,
+`debug-watchdog <id> <epoch>\n` renews the watchdog using the current epoch and
+returns only `{"id":<id>,"ok":true}\r\n`. A correlated rejection returns
+`"ok":false` and leaves the watchdog deadline unchanged. Normal commands also
+refresh the watchdog. The renewal neither reads inventory nor grants authority.
 Its internal application-message bus and physical Pico USB do not qualify CAN
 electrical behavior or STM32 Windows enumeration.
 
