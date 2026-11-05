@@ -79,6 +79,32 @@ journaled private owner. Only a positive exact probe plus settled `owned` state
 permits execution. Recovery may probe read-only repeatedly and release only a
 positively matched existing lease. It must not renew or reclaim to prove ownership.
 
+## Publication change notifications
+
+The CAN gateway enables publication notifications on the current CDC connection
+when it receives `panel-stream`. The first notification establishes a baseline.
+Each subsequent notification identifies a change in publication or delivery
+evidence. Each complete line uses this shape:
+
+```json
+{"publicationStream":"change","epoch":65536,"sequence":"1"}
+```
+
+The sequence starts at `1` and increases by one per emitted record, as a
+canonical unsigned 64-bit decimal string. Repeating the opt-in within a
+connection keeps the sequence. The writer can coalesce pending changes before
+emission. It completes any partial line before writing another, and sends
+pending publication evidence before accepting the next command. Exhaustion
+emits `{"publicationStream":"loss"}` and retires the stream.
+
+The notification invalidates previous readback. It carries no owner or lease
+proof. Read `publication state` after a change and use the correlated Inspect
+reply when private ownership has not already been proved for this exact lease
+and connection. An admitted override requires a live stream with the same boot
+and connection identity. Malformed records, sequence gaps, and disconnection
+retire that evidence. A replacement connection needs a new baseline and fresh
+ownership verification. Lease renewals still use the original deadlines.
+
 ## Atomic ownership and reconciliation
 
 The serialized firmware owner resolves the current revision and target slots,
