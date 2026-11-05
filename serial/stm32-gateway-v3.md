@@ -150,6 +150,15 @@ The Pico protocol-1 demo remains a legacy adapter with its own behavior/capacity
 The current [Pico debug target](https://github.com/opensimgear/device-gateway/tree/main/simulation/pico)
 uses these lifecycle/configuration/action/event contracts with a distinct
 `pico-debug-gateway` role, preserved USB serial and guarded debug injection.
+When the Pico snapshot advertises `debugInventoryStream: 1`, the host can send
+`panel-stream\n` on that CDC connection to subscribe to the connection-local
+`publicationStream` sequence. A `change` record establishes a baseline and
+invalidates gateway state. An `inventory` record also covers visible debug
+device state such as raw contacts, axes, expansion availability and the active
+definition. Both are wake hints for a correlated snapshot. Raw HID and ordered
+device events keep their existing transports. This capability grants no CAN
+publication authority. The Pico command watchdog still applies and resets the
+stream when it neutralizes the connection.
 Its internal application-message bus and physical Pico USB do not qualify CAN
 electrical behavior or STM32 Windows enumeration.
 
