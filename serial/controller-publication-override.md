@@ -97,8 +97,14 @@ emission. It completes any partial line before writing another, and sends
 pending publication evidence before accepting the next command. Exhaustion
 emits `{"publicationStream":"loss"}` and retires the stream.
 
-The notification invalidates previous readback. It carries no owner or lease
-proof. Read `publication state` after a change and use the correlated Inspect
+An `inventory` record uses the same epoch and sequence fields when only the
+admission warning changes. It invalidates inventory readback and preserves
+the existing publication evidence. A pending `change` record covers both.
+Repeated identical rejections are quiet. Their cumulative counter is available
+in snapshot replies.
+
+A `change` record invalidates previous publication and inventory readback.
+Read `publication state` after a change and use the correlated Inspect
 reply when private ownership has not already been proved for this exact lease
 and connection. An admitted override requires a live stream with the same boot
 and connection identity. Malformed records, sequence gaps, and disconnection
