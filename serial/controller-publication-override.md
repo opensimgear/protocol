@@ -83,8 +83,8 @@ positively matched existing lease. It must not renew or reclaim to prove ownersh
 
 The CAN gateway enables publication notifications on the current CDC connection
 when it receives `panel-stream`. The first notification establishes a baseline.
-Each subsequent notification identifies a change in publication or delivery
-evidence. Each complete line uses this shape:
+Each subsequent notification identifies a change in publication, delivery or
+command-route evidence. Each complete line uses this shape:
 
 ```json
 {"publicationStream":"change","epoch":65536,"sequence":"1"}
@@ -96,6 +96,15 @@ connection keeps the sequence. The writer can coalesce pending changes before
 emission. It completes any partial line before writing another, and sends
 pending publication evidence before accepting the next command. Exhaustion
 emits `{"publicationStream":"loss"}` and retires the stream.
+
+A CAN snapshot with `configurationRouteEvents: true` promises a `change`
+when a peripheral's command route becomes ready or loses readiness. The
+first accepted heartbeat or input frame on the current assignment makes the
+route ready. Subsequent heartbeats on that assignment are quiet unless they
+change other publication evidence. A replaced assignment needs its own
+accepted frame. A command waiter uses the notification to read back current
+state and revalidate the target before retrying a read. The notification
+carries no command result or permission to replay a mutation.
 
 An `inventory` record uses the same epoch and sequence fields when only the
 admission warning changes. It invalidates inventory readback and preserves
